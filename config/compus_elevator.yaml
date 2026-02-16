@@ -1,0 +1,67 @@
+vina_slam:
+  ros__parameters:
+    finish: false
+    # ---------- General ----------
+    General:
+      lid_topic: "/livox/lidar"
+      imu_topic: "/livox/imu"
+      # The file path of the map to be saved
+      save_path: "/home/yang/Code/vina_slam_ws/key_frame_map/"
+      # The offline map in the save_path to be loaded
+      # The number after the map name is the threshold for loop
+      # '#' means the map is not loaded
+      previous_map: ""
+      # The bag name played in this run
+      bagname: "compus_elevator"
+      lidar_type: 0
+      blind: 0.5
+      point_filter_num: 3
+      extrinsic_tran: [0.04165, 0.02326, -0.0284]
+      extrinsic_rota: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+      # The session is saved in save_path + bagname
+      is_save_map: 1
+
+    # ---------- Odometry ----------
+    Odometry:
+      cov_gyr: 0.1
+      cov_acc: 1.0
+      rdw_gyr: 0.0001
+      rdw_acc: 0.0001
+      down_size: 0.1
+      dept_err: 0.02
+      beam_err: 0.05
+      voxel_size: 1.0
+      min_eigen_value: 0.0025
+      degrade_bound: 10
+      point_notime: 0
+
+    # ---------- LocalBA ----------
+    LocalBA:
+      win_size: 10
+      max_layer: 2
+      cov_gyr: 0.01
+      cov_acc: 1.0
+      rdw_gyr: 0.0001
+      rdw_acc: 0.0001
+      min_ba_point: 1
+      plane_eigen_value_thre: [4.0, 4.0, 4.0, 4.0]
+      imu_coef: 0.0001
+      thread_num: 5
+
+    # ---------- Loop ----------
+    Loop:
+      jud_default: 0.5
+      icp_eigval: 10.0
+      ratio_drift: 0.01
+      curr_halt: 10
+      prev_halt: 10
+      acsize: 2
+      mgsize: 2
+      isHighFly: 0
+
+    # ---------- GBA ----------
+    GBA:
+      voxel_size: 2
+      min_eigen_value: 0.1
+      eigen_value_array: [4.0, 4.0, 4.0, 4.0]
+      total_max_iter: 6
