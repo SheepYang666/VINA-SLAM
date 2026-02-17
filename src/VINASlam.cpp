@@ -1595,7 +1595,8 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr no_ds_pptr(new PVec);
       var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      if (LioStateEstimation(pptr))
+      // if (LioStateEstimation(pptr))
+      if (VNCLio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {
