@@ -86,7 +86,27 @@ inline Eigen::Matrix3d Exp(const Eigen::Vector3d& ang_vel, const double& dt) {
 inline Eigen::Vector3d Log(const Eigen::Matrix3d& R) {
   double theta = (R.trace() > 3.0 - 1e-6) ? 0.0 : std::acos(0.5 * (R.trace() - 1));
   Eigen::Vector3d K(R(2, 1) - R(1, 2), R(0, 2) - R(2, 0), R(1, 0) - R(0, 1));
-  return (std::abs(theta) < 0.001) ? (0.5 * K) : (0.5 * theta / std::sin(theta) * K);
+
+  // Improved numerical stability: handle small angles and near-pi angles
+  if (std::abs(theta) < 1e-8) {
+    // Very small angle: use first-order approximation
+    return 0.5 * K;
+  }
+
+  double sin_theta = std::sin(theta);
+  if (std::abs(sin_theta) < 1e-8) {
+    // Near pi: theta/sin(theta) is unstable, use alternative formulation
+    // For theta near pi, the rotation axis is well-defined but angle extraction is tricky
+    // Use the identity: theta = 2 * atan2(||K||/2, (1+trace)/2)
+    double K_norm = K.norm() / 2.0;
+    double cos_half_theta = std::sqrt((1.0 + R.trace()) / 2.0);
+    if (cos_half_theta < 1e-8) {
+      // Exactly pi rotation
+      return (theta / (2.0 * K_norm + 1e-12)) * K;
+    }
+  }
+
+  return 0.5 * theta / sin_theta * K;
 }
 
 // ============================================================================

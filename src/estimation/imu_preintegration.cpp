@@ -130,6 +130,12 @@ double ImuPreintegration::evaluate(core::IMUST& st1, core::IMUST& st2,
 
   Eigen::Matrix<double, 15, 15> cov_inv = cov_.inverse();
 
+  // Check for NaN in covariance inverse (indicates numerical instability)
+  if (!cov_inv.allFinite()) {
+    cov_ = Eigen::Matrix<double, 15, 15>::Identity() * 1e-3;
+    cov_inv = cov_.inverse();
+  }
+
   if (jac_enable) {
     Eigen::Matrix3d JR_inv = jr_inv(res_r);
 
@@ -198,6 +204,12 @@ double ImuPreintegration::evaluateWithGravity(core::IMUST& st1, core::IMUST& st2
   rr.block<3, 1>(12, 0) = res_ba * b_wei;
 
   Eigen::Matrix<double, 15, 15> cov_inv = cov_.inverse();
+
+  // Check for NaN in covariance inverse (indicates numerical instability)
+  if (!cov_inv.allFinite()) {
+    cov_ = Eigen::Matrix<double, 15, 15>::Identity() * 1e-3;
+    cov_inv = cov_.inverse();
+  }
 
   if (jac_enable) {
     Eigen::Matrix3d JR_inv = jr_inv(res_r);
