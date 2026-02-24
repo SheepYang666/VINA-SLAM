@@ -284,6 +284,14 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
   Eigen::Matrix3d nnt;
   Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
 
+  // Check for NaN in covariance inverse (indicates numerical instability)
+  if (!cov_inv.allFinite())
+  {
+    RCLCPP_WARN(node->get_logger(), "LioStateEstimation: covariance inverse contains NaN/Inf, resetting covariance");
+    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
+    cov_inv = x_curr.cov.inverse();
+  }
+
   for (int iterCount = 0; iterCount < num_max_iter; iterCount++)
   {
     Eigen::Matrix<double, 6, 6> HTH;
@@ -419,6 +427,14 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
 
   Eigen::Matrix3d nnt;
   Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
+
+  // Check for NaN in covariance inverse (indicates numerical instability)
+  if (!cov_inv.allFinite())
+  {
+    RCLCPP_WARN(node->get_logger(), "VNCLio: covariance inverse contains NaN/Inf, resetting covariance");
+    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
+    cov_inv = x_curr.cov.inverse();
+  }
 
   // ========== VNC Parameters ==========
   const double VNC_EPSILON = 1e-6;            // Small angle threshold
@@ -903,6 +919,15 @@ void VINA_SLAM::LioStateEstimationKdtree(PVecPtr pptr)
   PLV(3) vecs(NMATCH);          // 最近邻点坐标缓存
   int rematch_num = 0;
   Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
+
+  // Check for NaN in covariance inverse (indicates numerical instability)
+  if (!cov_inv.allFinite())
+  {
+    RCLCPP_WARN(node->get_logger(),
+                "LioStateEstimationKdtree: covariance inverse contains NaN/Inf, resetting covariance");
+    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
+    cov_inv = x_curr.cov.inverse();
+  }
 
   Eigen::Matrix<double, NMATCH, 1> b;
   b.setOnes();
@@ -1595,8 +1620,8 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr no_ds_pptr(new PVec);
       var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      // if (LioStateEstimation(pptr))
-      if (VNCLio(no_ds_pptr))
+      if (LioStateEstimation(pptr))
+      // if (VNCLio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {

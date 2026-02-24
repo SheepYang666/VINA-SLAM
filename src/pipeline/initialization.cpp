@@ -44,6 +44,34 @@ void Initialization::alignGravity(std::vector<core::IMUST>& xs) {
 
   Eigen::Vector3d rotvec = n0.cross(n1);  // Calculate the rotation vector
   double rnorm = rotvec.norm();           // The rotation angle (sin(θ))
+
+  // Handle case where n0 and n1 are parallel (no rotation needed)
+  if (rnorm < 1e-8) {
+    // n0 and n1 are parallel, either aligned or opposite
+    // Check if they are opposite (180 degree rotation needed)
+    if (n0.dot(n1) < 0) {
+      // Opposite directions: rotate 180 degrees around an orthogonal axis
+      Eigen::Vector3d ortho = n0.cross(Eigen::Vector3d::UnitX());
+      if (ortho.norm() < 1e-8) {
+        ortho = n0.cross(Eigen::Vector3d::UnitY());
+      }
+      rotvec = ortho.normalized();
+      rnorm = 1.0;  // sin(90°) = 1, but we'll use 180° rotation
+      Eigen::AngleAxisd angaxis(M_PI, rotvec);
+      Eigen::Matrix3d rot = angaxis.toRotationMatrix();
+      // Apply rotation to all states
+      Eigen::Vector3d p0 = xs[0].p;
+      for (size_t i = 0; i < xs.size(); i++) {
+        xs[i].p = rot * (xs[i].p - p0) + p0;
+        xs[i].R = rot * xs[i].R;
+        xs[i].v = rot * xs[i].v;
+        xs[i].g = rot * xs[i].g;
+      }
+    }
+    // If aligned (n0.dot(n1) > 0), no rotation needed
+    return;
+  }
+
   rotvec = rotvec / rnorm;                // Uniform rotation axis
 
   // Construct rotation: the angle is asin(rnorm), the axis is rotvec

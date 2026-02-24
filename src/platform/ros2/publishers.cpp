@@ -7,6 +7,7 @@
 #include "vina_slam/mapping/keyframe.hpp"
 #include "vina_slam/mapping/octree.hpp"
 #include <pcl_conversions/pcl_conversions.h>
+#include <cmath>
 
 namespace vina_slam {
 namespace platform {
@@ -36,6 +37,16 @@ ResultPublisher& ResultPublisher::instance() {
 void ResultPublisher::publishOdometry(const core::IMUST& xc) {
   Eigen::Quaterniond q_this(xc.R);
   Eigen::Vector3d t_this = xc.p;
+
+  auto isFinite = [](double v) { return std::isfinite(v); };
+  if (!isFinite(t_this.x()) || !isFinite(t_this.y()) || !isFinite(t_this.z()) ||
+      !isFinite(q_this.x()) || !isFinite(q_this.y()) || !isFinite(q_this.z()) || !isFinite(q_this.w())) {
+    RCLCPP_WARN(
+        node->get_logger(),
+        "Skipping TF publish for aft_mapped: non-finite pose (x=%.6f, y=%.6f, z=%.6f, q=[%.6f, %.6f, %.6f, %.6f])",
+        t_this.x(), t_this.y(), t_this.z(), q_this.x(), q_this.y(), q_this.z(), q_this.w());
+    return;
+  }
 
   double stamp_sec = 0.0;
   pcl_time_lock.lock();
