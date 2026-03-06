@@ -443,19 +443,6 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
   const double VNC_VOXEL_SIZE = voxel_size;   // Voxel size for scan plane extraction
   const int VNC_MAX_LAYER = std::max(0, max_layer);  // Align with recut max_layer
   const int VNC_MIN_POINTS_SUBDIVIDE = 10;            // Fallback min points for subdivision
-  const double VNC_EIGEN_RATIO_THRESH = 0.1;  // Eigenvalue ratio threshold for plane
-
-  // Layer-aware judge aligned with recut():
-  // eig[0] < min_eigen_value && eig[0] / eig[2] < plane_eigen_value_thre[layer]
-  auto plane_judge_layer = [&](const Eigen::Vector3d& eig_values, int layer_idx) {
-    double eig_ratio = eig_values[0] / (eig_values[2] + 1e-10);
-    if (layer_idx >= 0 && static_cast<size_t>(layer_idx) < plane_eigen_value_thre.size())
-    {
-      return (eig_values[0] < min_eigen_value) && (eig_ratio < plane_eigen_value_thre[layer_idx]);
-    }
-    // Fallback to previous VNC threshold if per-layer table is unavailable
-    return (eig_values[0] < min_eigen_value) && (eig_ratio < VNC_EIGEN_RATIO_THRESH);
-  };
 
   auto min_points_for_layer = [&](int layer_idx) {
     if (layer_idx >= 0 && layer_idx < min_point.size())
@@ -507,8 +494,8 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     ot->eig_value = eig_solver.eigenvalues();
     ot->eig_vector = eig_solver.eigenvectors();
 
-    // Layer-aware plane check (same criterion family as recut)
-    bool is_plane = plane_judge_layer(ot->eig_value, ot->layer);
+    // Layer-aware plane check (directly reusing recut criterion)
+    bool is_plane = ot->plane_judge(ot->eig_value);
 
     if (is_plane)
     {
