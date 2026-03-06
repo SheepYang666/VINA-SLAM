@@ -7,6 +7,7 @@
 
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Geometry/Quaternion.h>
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <ios>
@@ -440,9 +441,29 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
   const double VNC_EPSILON = 1e-6;            // Small angle threshold
   const double VNC_ALPHA = 0.1;               // VNC weight coefficient
   const double VNC_VOXEL_SIZE = voxel_size;   // Voxel size for scan plane extraction
-  const int VNC_MAX_LAYER = 2;                // Max subdivision depth
-  const int VNC_MIN_POINTS_SUBDIVIDE = 10;    // Min points to consider subdivision
+  const int VNC_MAX_LAYER = std::max(0, max_layer);  // Align with recut max_layer
+  const int VNC_MIN_POINTS_SUBDIVIDE = 10;            // Fallback min points for subdivision
   const double VNC_EIGEN_RATIO_THRESH = 0.1;  // Eigenvalue ratio threshold for plane
+
+  // Layer-aware judge aligned with recut():
+  // eig[0] < min_eigen_value && eig[0] / eig[2] < plane_eigen_value_thre[layer]
+  auto plane_judge_layer = [&](const Eigen::Vector3d& eig_values, int layer_idx) {
+    double eig_ratio = eig_values[0] / (eig_values[2] + 1e-10);
+    if (layer_idx >= 0 && static_cast<size_t>(layer_idx) < plane_eigen_value_thre.size())
+    {
+      return (eig_values[0] < min_eigen_value) && (eig_ratio < plane_eigen_value_thre[layer_idx]);
+    }
+    // Fallback to previous VNC threshold if per-layer table is unavailable
+    return (eig_values[0] < min_eigen_value) && (eig_ratio < VNC_EIGEN_RATIO_THRESH);
+  };
+
+  auto min_points_for_layer = [&](int layer_idx) {
+    if (layer_idx >= 0 && layer_idx < min_point.size())
+    {
+      return std::max(3, static_cast<int>(min_point[layer_idx]));
+    }
+    return std::max(3, VNC_MIN_POINTS_SUBDIVIDE);
+  };
 
   // ========== Build temporary voxel map for current scan ==========
   // This creates voxels from the current frame and fits planes to get n_scan
@@ -486,9 +507,8 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     ot->eig_value = eig_solver.eigenvalues();
     ot->eig_vector = eig_solver.eigenvectors();
 
-    // Check if this is a valid plane
-    double eig_ratio = ot->eig_value[0] / (ot->eig_value[2] + 1e-10);
-    bool is_plane = (ot->eig_value[0] < min_eigen_value) && (eig_ratio < VNC_EIGEN_RATIO_THRESH);
+    // Layer-aware plane check (same criterion family as recut)
+    bool is_plane = plane_judge_layer(ot->eig_value, ot->layer);
 
     if (is_plane)
     {
@@ -506,7 +526,8 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
         ot->plane.normal = -ot->plane.normal;
       }
     }
-    else if (depth < VNC_MAX_LAYER && ot->point_fix.size() >= VNC_MIN_POINTS_SUBDIVIDE)
+    else if ((depth < VNC_MAX_LAYER) && (ot->layer < VNC_MAX_LAYER) &&
+             (static_cast<int>(ot->point_fix.size()) >= min_points_for_layer(ot->layer)))
     {
       // Not a plane but enough points - subdivide
       ot->octo_state = 1;  // Mark as subdivided
