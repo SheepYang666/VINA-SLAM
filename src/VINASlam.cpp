@@ -266,6 +266,18 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
 bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
 {
+  // Check if current state is valid before proceeding
+  if (!x_curr.p.allFinite() || !x_curr.v.allFinite() || !x_curr.R.allFinite()) {
+    RCLCPP_WARN(node->get_logger(), "LioStateEstimation: current state contains NaN/Inf, returning false");
+    return false;
+  }
+
+  // Check and fix covariance matrix before computing inverse
+  if (!x_curr.cov.allFinite()) {
+    RCLCPP_WARN(node->get_logger(), "LioStateEstimation: covariance contains NaN/Inf, resetting to default");
+    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
+  }
+
   IMUST x_prop = x_curr;
 
   const int num_max_iter = 4;
@@ -375,7 +387,17 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
 
     if (rematch_num >= 2 || (iterCount == num_max_iter - 1))
     {
-      x_curr.cov = (I_STATE - G) * x_curr.cov;
+      // Use symmetric form for covariance update to ensure positive definiteness
+      Eigen::Matrix<double, DIM, DIM> I_G = I_STATE - G;
+      x_curr.cov = I_G * x_curr.cov * I_G.transpose();
+      x_curr.cov = 0.5 * (x_curr.cov + x_curr.cov.transpose());
+
+      // Check positive definiteness and regularize if needed
+      Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, DIM, DIM>> saes_cov(x_curr.cov);
+      if (saes_cov.eigenvalues().minCoeff() < 1e-10) {
+        x_curr.cov += Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-8;
+      }
+
       EKF_stop_flg = true;
     }
 
@@ -409,6 +431,18 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
 bool VINA_SLAM::VNCLio(PVecPtr pptr)
 {
   // Note: Constants (kRadToDeg, kMeterToCm, etc.) are globally defined in constants.hpp
+
+  // Check if current state is valid before proceeding
+  if (!x_curr.p.allFinite() || !x_curr.v.allFinite() || !x_curr.R.allFinite()) {
+    RCLCPP_WARN(node->get_logger(), "VNCLio: current state contains NaN/Inf, returning false");
+    return false;
+  }
+
+  // Check and fix covariance matrix before computing inverse
+  if (!x_curr.cov.allFinite()) {
+    RCLCPP_WARN(node->get_logger(), "VNCLio: covariance contains NaN/Inf, resetting to default");
+    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
+  }
 
   IMUST x_prop = x_curr;
 
@@ -756,10 +790,10 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
 
       // VNC Jacobian (6×1)
       // J_rot = t^T * R * [n_scan]×  → transpose to get 3×1
-      // J_trs = 0 (normal is translation invariant)
+      // J_trs = small regularization (was zero, causing HTH translation block singularity)
       Eigen::Matrix<double, 6, 1> jac_n;
       jac_n.head(3) = (t.transpose() * x_curr.R * vnc.skew_n_scan).transpose();
-      jac_n.tail(3) = Eigen::Vector3d::Zero();
+      jac_n.tail(3) = Eigen::Vector3d::Constant(1e-6);  // Small regularization for numerical stability
 
       // Weight with VNC coefficient
       double w_n = VNC_ALPHA * vnc.weight;
@@ -776,7 +810,16 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     // ========== IEKF Update ==========
     H_T_H.block<6, 6>(0, 0) = HTH;
 
+    // Add regularization to ensure matrix invertibility
+    H_T_H += Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-8;
+
     Eigen::Matrix<double, DIM, DIM> K_1 = (H_T_H + cov_inv).inverse();
+
+    // Check K_1 validity
+    if (!K_1.allFinite()) {
+      RCLCPP_WARN(node->get_logger(), "VNCLio: K_1 matrix contains NaN/Inf, skipping iteration");
+      return false;
+    }
 
     G.block<DIM, 6>(0, 0) = K_1.block<DIM, 6>(0, 0) * HTH;
 
@@ -784,6 +827,12 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
 
     Eigen::Matrix<double, DIM, 1> solution =
         K_1.block<DIM, 6>(0, 0) * HTz + vec - G.block<DIM, 6>(0, 0) * vec.block<6, 1>(0, 0);
+
+    // Check solution validity before state update
+    if (!solution.allFinite()) {
+      RCLCPP_WARN(node->get_logger(), "VNCLio: solution contains NaN/Inf, skipping iteration");
+      return false;
+    }
 
     x_curr += solution;
 
@@ -805,7 +854,20 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
 
     if (rematch_num >= 2 || (iterCount == num_max_iter - 1))
     {
-      x_curr.cov = (I_STATE - G) * x_curr.cov;
+      // Use symmetric form for covariance update to ensure positive definiteness
+      // P = (I - G) * P * (I - G)^T is more stable than P = (I - G) * P
+      Eigen::Matrix<double, DIM, DIM> I_G = I_STATE - G;
+      x_curr.cov = I_G * x_curr.cov * I_G.transpose();
+
+      // Ensure symmetry
+      x_curr.cov = 0.5 * (x_curr.cov + x_curr.cov.transpose());
+
+      // Check positive definiteness and regularize if needed
+      Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, DIM, DIM>> saes(x_curr.cov);
+      if (saes.eigenvalues().minCoeff() < 1e-10) {
+        x_curr.cov += Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-8;
+      }
+
       EKF_stop_flg = true;
     }
 
@@ -1028,7 +1090,17 @@ void VINA_SLAM::LioStateEstimationKdtree(PVecPtr pptr)
     }
     if (rematch_num >= 2 || (iterCount == num_max_iter - 1))
     {
-      x_curr.cov = (I_STATE - G) * x_curr.cov;
+      // Use symmetric form for covariance update to ensure positive definiteness
+      Eigen::Matrix<double, DIM, DIM> I_G = I_STATE - G;
+      x_curr.cov = I_G * x_curr.cov * I_G.transpose();
+      x_curr.cov = 0.5 * (x_curr.cov + x_curr.cov.transpose());
+
+      // Check positive definiteness and regularize if needed
+      Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, DIM, DIM>> saes_cov(x_curr.cov);
+      if (saes_cov.eigenvalues().minCoeff() < 1e-10) {
+        x_curr.cov += Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-8;
+      }
+
       EKF_stop_flg = true;
     }
     if (EKF_stop_flg)
@@ -1620,8 +1692,8 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr no_ds_pptr(new PVec);
       var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      if (LioStateEstimation(pptr))
-      // if (VNCLio(no_ds_pptr))
+      // if (LioStateEstimation(pptr))
+      if (VNCLio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {
