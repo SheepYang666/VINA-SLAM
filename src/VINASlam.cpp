@@ -404,8 +404,75 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
 // ============================================================================
 // Extends LioStateEstimation with additional rotation constraint from
 // normal vector consistency between scan and map planes.
+//
+// Algorithm overview:
+//   1. [IEKF外] 对当前scan（body系）做体素化 + fit_scan_plane（含八叉树细分），
+//      使用和BA recut完全一致的平面判据（plane_judge: min_eigen_value,
+//      plane_eigen_value_thre, min_point, max_layer），提取所有scan平面的
+//      法向量和中心点（均在body系下存储）。
+//   2. [IEKF内 每次迭代]
+//      a) 逐点做 point-to-plane 残差（与LioStateEstimation完全一致）
+//      b) 对每个scan平面：将body系center投影到世界系，在surf_map中match
+//         得到map平面法向量n_map，然后用投影残差
+//         r = (I - n_map * n_map^T) * R * n_scan_body 约束旋转
+//   3. 退化检测（与LioStateEstimation一致）
+//
 // See: docs/theory/unified_residual_framework.md for theoretical details.
 // ============================================================================
+
+// Helper: recursively collect all valid leaf planes from an OctoTree.
+// Uses the same traversal pattern as trasOpt(NormalFactor) in BA.
+// Planes are collected in body frame (as stored by generate_voxel + fit_scan_plane).
+namespace {
+
+struct ScanPlaneInfo {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  Eigen::Vector3d center_body;      ///< Plane center in body frame
+  Eigen::Vector3d normal_body;      ///< Plane normal in body frame (unit vector)
+  Eigen::Matrix3d skew_normal_body; ///< Skew-symmetric [normal_body]× (cached)
+  double quality;                   ///< Plane quality ∈ (0,1], higher = flatter plane
+  double sigma_n;                   ///< Normal estimation uncertainty
+};
+
+/// @brief Recursively collect valid leaf planes from an OctoTree node.
+/// Uses the same planarity criteria as BA: eig_value[0]/eig_value[1] <= 0.12
+void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
+{
+  if (ot == nullptr) return;
+
+  if (ot->octo_state == 0)
+  {
+    // Leaf node — check if it has a valid plane (same check as trasOpt in BA)
+    if (ot->plane.is_plane && ot->eig_value[1] > 1e-12 &&
+        ot->eig_value[0] / ot->eig_value[1] <= 0.12)
+    {
+      double lambda_min = ot->eig_value[0];
+      double lambda_mid = ot->eig_value[1];
+      double lambda_max = ot->eig_value[2];
+      double lambda_sum = lambda_min + lambda_mid + lambda_max + 1e-10;
+      double quality = 1.0 - lambda_min / lambda_sum;
+
+      if (quality > 0.5)
+      {
+        ScanPlaneInfo sp;
+        sp.center_body = ot->plane.center;
+        sp.normal_body = ot->plane.normal.normalized();
+        sp.skew_normal_body = hat(sp.normal_body);
+        sp.quality = quality;
+        sp.sigma_n = std::sqrt(lambda_min / lambda_sum);
+        planes.push_back(sp);
+      }
+    }
+  }
+  else
+  {
+    // Internal node — recurse into children
+    for (int i = 0; i < 8; ++i)
+      collectScanPlanes(ot->leaves[i], planes);
+  }
+}
+
+} // anonymous namespace
 
 bool VINA_SLAM::VNCLio(PVecPtr pptr)
 {
@@ -438,133 +505,47 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
   }
 
   // ========== VNC Parameters ==========
-  const double VNC_EPSILON = 1e-6;            // Small angle threshold
-  const double VNC_ALPHA = 0.1;               // VNC weight coefficient
-  const double VNC_VOXEL_SIZE = voxel_size;   // Voxel size for scan plane extraction
-  const int VNC_MAX_LAYER = std::max(0, max_layer);  // Align with recut max_layer
-  const int VNC_MIN_POINTS_SUBDIVIDE = 10;            // Fallback min points for subdivision
+  // VNC_ALPHA: weight coefficient for normal consistency residual relative to point-to-plane
+  // VNC_EPSILON: skip threshold for near-parallel normals (numerical stability)
+  const double VNC_ALPHA = 0.1;
+  const double VNC_EPSILON = 1e-6;
 
-  auto min_points_for_layer = [&](int layer_idx) {
-    if (layer_idx >= 0 && layer_idx < min_point.size())
-    {
-      return std::max(3, static_cast<int>(min_point[layer_idx]));
-    }
-    return std::max(3, VNC_MIN_POINTS_SUBDIVIDE);
-  };
-
-  // ========== Build temporary voxel map for current scan ==========
-  // This creates voxels from the current frame and fits planes to get n_scan
+  // ======================================================================
+  // Step 1: Extract scan plane normals in body frame (OUTSIDE IEKF loop)
+  // ======================================================================
+  // Build temporary voxel map for the current scan in body frame.
+  // Uses the body-frame overload of generate_voxel (no coordinate transform).
+  // Then fit_scan_plane performs SVD + plane_judge with subdivision — this is
+  // identical to how BA's recut extracts planes (same parameters: min_eigen_value,
+  // plane_eigen_value_thre, min_point, max_layer).
   unordered_map<VOXEL_LOC, OctoTree*> scan_voxels;
-  PVec pvec_world = *pptr;  // Copy for transformation
+  PVec pvec_body = *pptr;  // copy in body frame
+  generate_voxel(scan_voxels, pvec_body, voxel_size);
 
-  // Transform points to world frame for voxelization
-  for (auto& pv : pvec_world)
-  {
-    pv.pnt = x_curr.R * pv.pnt + x_curr.p;
-  }
-
-  // Build voxel map and fit planes
-  generate_voxel(scan_voxels, pvec_world, VNC_VOXEL_SIZE);
-
-  // ========== Compute eigenvalues and subdivide if needed ==========
-  // Recursive lambda for plane fitting with subdivision
-  std::function<void(OctoTree*, int)> fit_plane_with_subdivide = [&](OctoTree* ot, int depth) {
-    if (ot == nullptr || ot->point_fix.size() < 3)
-    {
-      return;
-    }
-
-    // Compute covariance and eigenvalues from points
-    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
-    Eigen::Vector3d mean = Eigen::Vector3d::Zero();
-    for (const auto& pv : ot->point_fix)
-    {
-      mean += pv.pnt;
-    }
-    mean /= ot->point_fix.size();
-
-    for (const auto& pv : ot->point_fix)
-    {
-      Eigen::Vector3d d = pv.pnt - mean;
-      cov += d * d.transpose();
-    }
-    cov /= ot->point_fix.size();
-
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig_solver(cov);
-    ot->eig_value = eig_solver.eigenvalues();
-    ot->eig_vector = eig_solver.eigenvectors();
-
-    // Layer-aware plane check (directly reusing recut criterion)
-    bool is_plane = ot->plane_judge(ot->eig_value);
-
-    if (is_plane)
-    {
-      // Valid plane - compute plane parameters
-      ot->plane.center = mean;
-      ot->plane.normal = ot->eig_vector.col(0);  // Min eigenvector
-      ot->plane.is_plane = true;
-      ot->plane.radius = ot->eig_value[2];
-      ot->isexist = true;
-
-      // Ensure normal points towards sensor
-      Eigen::Vector3d center_body = x_curr.R.transpose() * (ot->plane.center - x_curr.p);
-      if (ot->plane.normal.dot(center_body) > 0)
-      {
-        ot->plane.normal = -ot->plane.normal;
-      }
-    }
-    else if ((depth < VNC_MAX_LAYER) && (ot->layer < VNC_MAX_LAYER) &&
-             (static_cast<int>(ot->point_fix.size()) >= min_points_for_layer(ot->layer)))
-    {
-      // Not a plane but enough points - subdivide
-      ot->octo_state = 1;  // Mark as subdivided
-
-      // Distribute points to child voxels
-      for (auto& pv : ot->point_fix)
-      {
-        int xyz[3] = { 0, 0, 0 };
-        for (int k = 0; k < 3; k++)
-        {
-          if (pv.pnt[k] > ot->voxel_center[k])
-          {
-            xyz[k] = 1;
-          }
-        }
-        int leafnum = 4 * xyz[0] + 2 * xyz[1] + xyz[2];
-
-        if (ot->leaves[leafnum] == nullptr)
-        {
-          ot->leaves[leafnum] = new OctoTree(ot->layer + 1, 1);
-          ot->leaves[leafnum]->voxel_center[0] = ot->voxel_center[0] + (2 * xyz[0] - 1) * ot->quater_length;
-          ot->leaves[leafnum]->voxel_center[1] = ot->voxel_center[1] + (2 * xyz[1] - 1) * ot->quater_length;
-          ot->leaves[leafnum]->voxel_center[2] = ot->voxel_center[2] + (2 * xyz[2] - 1) * ot->quater_length;
-          ot->leaves[leafnum]->quater_length = ot->quater_length / 2;
-        }
-
-        ot->leaves[leafnum]->push_fix(pv);
-      }
-
-      // Recursively fit planes for children
-      for (int i = 0; i < 8; i++)
-      {
-        if (ot->leaves[i] != nullptr)
-        {
-          fit_plane_with_subdivide(ot->leaves[i], depth + 1);
-        }
-      }
-    }
-  };
-
-  // Apply plane fitting with subdivision to all voxels
+  // fit_scan_plane triggers SVD and octree subdivision for each voxel,
+  // using sensor_pos = origin (body frame sensor is at origin).
+  Eigen::Vector3d sensor_origin_body = Eigen::Vector3d::Zero();
   for (auto& kv : scan_voxels)
   {
-    fit_plane_with_subdivide(kv.second, 0);
+    kv.second->fit_scan_plane(sensor_origin_body);
   }
 
-  // VNC pairs storage
-  vector<VNCPair> vnc_pairs;
-  vnc_pairs.reserve(psize / 4);
+  // Collect all valid leaf planes from the scan octrees.
+  // The collection uses the same eigenvalue ratio check (<=0.12) as BA's trasOpt.
+  std::vector<ScanPlaneInfo> scan_planes;
+  scan_planes.reserve(scan_voxels.size());
+  for (auto& kv : scan_voxels)
+  {
+    collectScanPlanes(kv.second, scan_planes);
+  }
+  const int num_scan_planes = static_cast<int>(scan_planes.size());
 
+  RCLCPP_DEBUG(node->get_logger(), "VNCLio: extracted %d scan planes from %zu voxels",
+               num_scan_planes, scan_voxels.size());
+
+  // ======================================================================
+  // Step 2: IEKF Iterative Update
+  // ======================================================================
   for (int iterCount = 0; iterCount < num_max_iter; iterCount++)
   {
     Eigen::Matrix<double, 6, 6> HTH;
@@ -578,9 +559,9 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     match_num = 0;
     nnt.setZero();
 
-    // Clear VNC pairs at each iteration (re-match)
-    vnc_pairs.clear();
-
+    // ------------------------------------------------------------------
+    // 2a. Point-to-Plane residuals (identical to LioStateEstimation)
+    // ------------------------------------------------------------------
     for (int i = 0; i < psize; i++)
     {
       pointVar& pv = pptr->at(i);
@@ -607,8 +588,6 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
       if (flag)
       {
         Plane& pp = *pla;
-
-        // ========== Point-to-Plane Residual (Original) ==========
         double R_inv = 1.0 / (0.0005 + sigma_d);
         double resi = pp.normal.dot(wld - pp.center);
 
@@ -619,169 +598,88 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
         HTz -= R_inv * jac * resi;
         nnt += pp.normal * pp.normal.transpose();
         match_num++;
-
-        // ========== VNC Residual Extraction ==========
-        // Find the scan voxel this point belongs to (with subdivision support)
-        float loc[3];
-        for (int j = 0; j < 3; j++)
-        {
-          loc[j] = wld[j] / VNC_VOXEL_SIZE;
-          if (loc[j] < 0)
-            loc[j] -= 1;
-        }
-        VOXEL_LOC voxel_loc(loc[0], loc[1], loc[2]);
-
-        auto it = scan_voxels.find(voxel_loc);
-        if (it != scan_voxels.end() && pp.is_plane)
-        {
-          // Recursive search for the finest valid plane containing this point
-          std::function<OctoTree*(OctoTree*, const Eigen::Vector3d&)> find_finest_plane =
-              [&](OctoTree* ot, const Eigen::Vector3d& pt) -> OctoTree* {
-            if (ot == nullptr)
-            {
-              return nullptr;
-            }
-
-            // If this voxel has a valid plane, check if we should go deeper
-            if (ot->plane.is_plane)
-            {
-              // Check if any child has a valid plane containing the point
-              for (int k = 0; k < 8; k++)
-              {
-                if (ot->leaves[k] != nullptr && ot->leaves[k]->plane.is_plane)
-                {
-                  // Check if point is in this child's voxel
-                  bool inside = true;
-                  for (int d = 0; d < 3; d++)
-                  {
-                    double half_size = ot->quater_length;
-                    if (std::abs(pt[d] - ot->leaves[k]->voxel_center[d]) > half_size)
-                    {
-                      inside = false;
-                      break;
-                    }
-                  }
-                  if (inside)
-                  {
-                    // Recursively search in this child
-                    OctoTree* finer = find_finest_plane(ot->leaves[k], pt);
-                    if (finer != nullptr)
-                    {
-                      return finer;  // Return finer plane
-                    }
-                  }
-                }
-              }
-              return ot;  // No finer plane found, return this one
-            }
-
-            // If this voxel is subdivided but not a plane itself, search children
-            if (ot->octo_state == 1)
-            {
-              for (int k = 0; k < 8; k++)
-              {
-                if (ot->leaves[k] != nullptr)
-                {
-                  bool inside = true;
-                  for (int d = 0; d < 3; d++)
-                  {
-                    double half_size = ot->quater_length;
-                    if (std::abs(pt[d] - ot->leaves[k]->voxel_center[d]) > half_size)
-                    {
-                      inside = false;
-                      break;
-                    }
-                  }
-                  if (inside)
-                  {
-                    OctoTree* result = find_finest_plane(ot->leaves[k], pt);
-                    if (result != nullptr)
-                    {
-                      return result;
-                    }
-                  }
-                }
-              }
-            }
-
-            return nullptr;
-          };
-
-          OctoTree* scan_ot = find_finest_plane(it->second, wld);
-          if (scan_ot != nullptr && scan_ot->plane.is_plane)
-          {
-            // Get scan plane normal (in world frame)
-            Eigen::Vector3d n_scan_world = scan_ot->plane.normal.normalized();
-
-            // Transform to body frame for Jacobian computation
-            Eigen::Vector3d n_scan_body = x_curr.R.transpose() * n_scan_world;
-
-            // Plane quality based on eigenvalue ratio
-            // Smaller min eigenvalue = flatter plane = better quality
-            double lambda_min = scan_ot->eig_value[0];
-            double lambda_mid = scan_ot->eig_value[1];
-            double lambda_max = scan_ot->eig_value[2];
-            double plane_quality = 1.0 - lambda_min / (lambda_min + lambda_mid + lambda_max + 1e-10);
-
-            if (plane_quality > 0.5)  // Quality threshold
-            {
-              VNCPair vnc;
-              vnc.n_scan = n_scan_body.normalized();
-              vnc.n_map = pp.normal.normalized();
-              vnc.p_scan = pv.pnt;
-              vnc.sigma_n = sqrt(lambda_min / (lambda_min + lambda_mid + lambda_max + 1e-10));
-              vnc.weight = plane_quality / (vnc.sigma_n * vnc.sigma_n + 0.01);
-              vnc.skew_n_scan = hat(vnc.n_scan);
-              vnc_pairs.push_back(vnc);
-            }
-          }
-        }
       }
     }
 
-    // ========== VNC Residual Accumulation ==========
+    // ------------------------------------------------------------------
+    // 2b. VNC normal consistency residuals
+    // ------------------------------------------------------------------
+    // For each scan plane (stored in body frame), project its center to
+    // world frame using current x_curr, then match in surf_map to find
+    // the corresponding map plane normal. Compute the tangent-space
+    // projection residual: r = (I - n_map * n_map^T) * R * n_scan_body
     int vnc_count = 0;
-    for (const auto& vnc : vnc_pairs)
+    for (int sp_idx = 0; sp_idx < num_scan_planes; sp_idx++)
     {
-      // Transform scan normal to world frame
-      Eigen::Vector3d n_scan_world = x_curr.R * vnc.n_scan;
+      const ScanPlaneInfo& sp = scan_planes[sp_idx];
 
-      // Tangent space projection (onto map normal's tangent plane)
-      Eigen::Matrix3d Pi = Eigen::Matrix3d::Identity() - vnc.n_map * vnc.n_map.transpose();
-      Eigen::Vector3d r_vec = Pi * n_scan_world;
+      // Transform scan plane center from body to world frame
+      Eigen::Vector3d center_world = x_curr.R * sp.center_body + x_curr.p;
 
-      // Scalar residual (tangent space distance)
+      // Find the corresponding map voxel using the center point
+      float loc[3];
+      for (int j = 0; j < 3; j++)
+      {
+        loc[j] = center_world[j] / voxel_size;
+        if (loc[j] < 0)
+          loc[j] -= 1;
+      }
+      VOXEL_LOC position(static_cast<int64_t>(loc[0]),
+                         static_cast<int64_t>(loc[1]),
+                         static_cast<int64_t>(loc[2]));
+
+      auto iter = surf_map.find(position);
+      if (iter == surf_map.end())
+        continue;
+
+      // Find the finest-level map plane containing this center point
+      OctoTree* map_ot = iter->second->find_fine_plane(center_world);
+      if (map_ot == nullptr || !map_ot->plane.is_plane)
+        continue;
+
+      Eigen::Vector3d n_map = map_ot->plane.normal.normalized();
+
+      // Transform scan normal from body to world frame
+      Eigen::Vector3d n_scan_world = x_curr.R * sp.normal_body;
+
+      // Tangent-space projection: project scan normal onto the plane
+      // perpendicular to n_map. If normals are consistent, r_vec ≈ 0.
+      // This is the same residual form as BA NormalFactor:
+      //   S = I - n_map * n_map^T  (projection matrix)
+      //   r_vec = S * n_scan_world
+      Eigen::Matrix3d S = Eigen::Matrix3d::Identity() - n_map * n_map.transpose();
+      Eigen::Vector3d r_vec = S * n_scan_world;
       double r_n = r_vec.norm();
 
-      // Skip small angles (numerical stability)
+      // Skip near-parallel normals (residual ≈ 0, numerically unstable)
       if (r_n < VNC_EPSILON)
-      {
         continue;
-      }
 
-      // Direction vector in tangent plane
+      // Direction of the residual in tangent plane
       Eigen::Vector3d t = r_vec / r_n;
 
-      // VNC Jacobian (6×1)
-      // J_rot = t^T * R * [n_scan]×  → transpose to get 3×1
-      // J_trs = 0 (normal is translation invariant)
+      // VNC Jacobian (6×1):
+      //   ∂r_n/∂ξ_rot = t^T * R * [n_scan_body]×   (3×1 → transpose)
+      //   ∂r_n/∂ξ_trs = 0  (normal direction is translation-invariant)
       Eigen::Matrix<double, 6, 1> jac_n;
-      jac_n.head(3) = (t.transpose() * x_curr.R * vnc.skew_n_scan).transpose();
+      jac_n.head(3) = (t.transpose() * x_curr.R * sp.skew_normal_body).transpose();
       jac_n.tail(3) = Eigen::Vector3d::Zero();
 
-      // Weight with VNC coefficient
-      double w_n = VNC_ALPHA * vnc.weight;
+      // Weight: VNC_ALPHA * plane_quality / (sigma_n^2 + regularization)
+      double w_n = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
 
-      // Accumulate (same form as point-to-plane!)
+      // Accumulate into the same HTH / HTz (same IEKF framework)
       HTH += w_n * jac_n * jac_n.transpose();
       HTz -= w_n * jac_n * r_n;
       vnc_count++;
     }
 
-    // Debug output for VNC
-    RCLCPP_DEBUG(node->get_logger(), "VNC: %d pairs, HTH trace: %.4f", vnc_count, HTH.trace());
+    RCLCPP_DEBUG(node->get_logger(), "VNCLio iter %d: %d pt matches, %d VNC pairs",
+                 iterCount, match_num, vnc_count);
 
-    // ========== IEKF Update ==========
+    // ------------------------------------------------------------------
+    // 2c. IEKF state update (identical to LioStateEstimation)
+    // ------------------------------------------------------------------
     H_T_H.block<6, 6>(0, 0) = HTH;
 
     Eigen::Matrix<double, DIM, DIM> K_1 = (H_T_H + cov_inv).inverse();
@@ -823,31 +721,21 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     }
   }
 
-  // ========== Cleanup temporary scan voxel map (recursive) ==========
-  std::function<void(OctoTree*)> delete_octree = [&](OctoTree* ot) {
-    if (ot == nullptr)
-    {
-      return;
-    }
-    // Recursively delete children
-    for (int k = 0; k < 8; k++)
-    {
-      if (ot->leaves[k] != nullptr)
-      {
-        delete_octree(ot->leaves[k]);
-        ot->leaves[k] = nullptr;
-      }
-    }
-    delete ot;
-  };
-
+  // ======================================================================
+  // Step 3: Cleanup temporary scan voxels
+  // ======================================================================
   for (auto& kv : scan_voxels)
   {
-    delete_octree(kv.second);
+    kv.second->delete_ptr();
+    delete kv.second;
   }
   scan_voxels.clear();
 
-  // ========== Degeneracy Check ==========
+  // ======================================================================
+  // Step 4: Degeneracy check (identical to LioStateEstimation)
+  // ======================================================================
+  // Check if the accumulated normal outer product nnt has three
+  // sufficiently large eigenvalues → non-degenerate geometry.
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(nnt);
   Eigen::Vector3d evalue = saes.eigenvalues();
 
