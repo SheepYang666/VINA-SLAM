@@ -240,6 +240,20 @@ public:
                    pcl::PointCloud<core::PointType>& pl_wind, std::vector<core::IMUST>& x_buf);
 
   /**
+   * @brief Fit plane to scan points using SVD with octree subdivision
+   * @param sensor_pos Sensor position for normal orientation
+   * @return true if a valid plane was found
+   */
+  bool fitScanPlane(const Eigen::Vector3d& sensor_pos);
+
+  /**
+   * @brief Find the finest octree node containing a plane at given point
+   * @param wld World point to query
+   * @return Pointer to OctoTree with plane, or nullptr
+   */
+  OctoTree* findFinePlane(Eigen::Vector3d& wld);
+
+  /**
    * @brief Check if point is inside this voxel
    * @param wld World point
    * @return true if inside
@@ -281,6 +295,8 @@ public:
   void allocate_fix(core::pointVar& pv) { allocateFix(pv); }
   void fix_divide(std::vector<SlideWindow*>& sws) { fixDivide(sws); }
   void plane_update() { planeUpdate(); }
+  bool fit_scan_plane(const Eigen::Vector3d& sensor_pos) { return fitScanPlane(sensor_pos); }
+  OctoTree* find_fine_plane(Eigen::Vector3d& wld) { return findFinePlane(wld); }
   void tras_opt(LidarFactor& vox_opt) { trasOpt(vox_opt); }
   void tras_opt(NormalFactor& vox_opt) { trasOpt(vox_opt); }
   void tras_ptr(std::vector<OctoTree*>& octos_release) { trasPtr(octos_release); }

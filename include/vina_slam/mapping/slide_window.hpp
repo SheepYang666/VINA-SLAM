@@ -38,7 +38,12 @@ public:
    * @brief Constructor with window size
    * @param wdsize Number of frames in the sliding window
    */
-  explicit SlideWindow(int wdsize) { resize(wdsize); }
+  explicit SlideWindow(int wdsize) {
+    pcrs_local.resize(wdsize);
+    points.resize(wdsize);
+    for (int i = 0; i < wdsize; i++)
+      points[i].reserve(20);
+  }
 
   /**
    * @brief Default constructor
@@ -46,20 +51,22 @@ public:
   SlideWindow() = default;
 
   /**
-   * @brief Resize the sliding window
+   * @brief Resize the sliding window (only if size changed)
    * @param wdsize New window size
    */
   void resize(int wdsize) {
-    points.resize(wdsize);
-    pcrs_local.resize(wdsize);
-    clear();
+    if (static_cast<int>(points.size()) != wdsize) {
+      points.resize(wdsize);
+      pcrs_local.resize(wdsize);
+    }
   }
 
   /**
    * @brief Clear all points in the window
    */
   void clear() {
-    for (size_t i = 0; i < points.size(); i++) {
+    int wdsize = points.size();
+    for (int i = 0; i < wdsize; i++) {
       points[i].clear();
       pcrs_local[i].clear();
     }

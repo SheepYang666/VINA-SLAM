@@ -6,7 +6,8 @@
 // Note: BTC.hpp and loop_detection.hpp removed - not needed for localization mode
 #include "vina_slam/estimation/imu_ekf.hpp"
 #include "vina_slam/sensor/lidar_decoder.hpp"
-#include "vina_slam/core/common.hpp"  // Replaces tools.hpp
+#include "vina_slam/core/common.hpp"
+#include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/voxel_map.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
@@ -162,18 +163,21 @@ public:
 
   explicit VINA_SLAM(const rclcpp::Node::SharedPtr& node_in);
 
-  bool LioStateEstimation(PVecPtr pptr);
-  bool lio_state_estimation(PVecPtr pptr) { return LioStateEstimation(pptr); }  // deprecated
-
   /**
-   * @brief LIO state estimation with VNC (Vector Normal Consistency) residual
+   * @brief Unified LIO state estimation (point-to-plane + optional VNC)
    *
-   * Extends LioStateEstimation with additional rotation constraint from
-   * normal vector consistency between scan and map planes.
+   * When use_vnc=false: standard IEKF with point-to-plane constraints.
+   * When use_vnc=true: adds VNC (Vector Normal Consistency) rotation
+   * constraints from scan-to-map normal matching.
    *
    * @param pptr Point cloud with variance information
-   * @return true if estimation is valid (non-degenerate), false otherwise
+   * @param use_vnc Enable VNC normal consistency constraints
+   * @return true if estimation is valid (non-degenerate)
    */
+  bool LioStateEstimation(PVecPtr pptr, bool use_vnc = false);
+  bool lio_state_estimation(PVecPtr pptr) { return LioStateEstimation(pptr); }  // deprecated
+
+  /// VNC-enabled state estimation (calls LioStateEstimation with use_vnc=true)
   bool VNCLio(PVecPtr pptr);
 
   pcl::PointCloud<PointType>::Ptr pl_tree;
@@ -259,24 +263,13 @@ private:
   void shift_sliding_window(int mgsize) { ShiftSlidingWindow(mgsize); }
 };
 
-inline void calcBodyVar(Eigen::Vector3d& pb, const float range_inc, const float degree_inc, Eigen::Matrix3d& var);
+// calcBodyVar, var_init, pvec_update, get_memory now in core/point_utils.hpp
 
-// Compute the variance of the each point
+// Sensor callbacks (defined in VINASlam.cpp, to be migrated)
+void imu_handler(const sensor_msgs::msg::Imu::SharedPtr& msg_in);
 
-inline void var_init(IMUST& ext, pcl::PointCloud<PointType>& pl_cur, PVecPtr pptr, double dept_err, double beam_err);
+bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus,
+                   IMUEKF& p_imu);
 
-inline void pvec_update(PVecPtr pptr, IMUST& x_curr, PLV(3) & pwld);
-
-// read_lidarstate removed - not needed for localization mode
-
-inline double get_memory();
-
-// icp_check removed - not needed for localization mode
-
-inline void imu_handler(const sensor_msgs::msg::Imu::SharedPtr& msg_in);
-
-inline bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus,
-                          IMUEKF& p_imu);
-
-// Initialization class is now in vina_slam/pipeline/initialization.hpp
-// Include that header directly and use vina_slam::pipeline::Initialization
+template <class T>
+void pcl_handler(T& msg);

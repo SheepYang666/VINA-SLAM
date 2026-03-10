@@ -51,6 +51,7 @@ find_package(livox_ros_driver2 REQUIRED)
 set(CORE_SOURCES
   src/core/types.cpp
   src/core/sensor_context.cpp
+  src/core/point_utils.cpp
 )
 
 # Sensor module sources
@@ -90,11 +91,10 @@ set(PLATFORM_SOURCES
   src/platform/ros2/io.cpp
 )
 
-# Main sources (to be refactored in future phases)
-# Note: BTC.cpp and loop_detection.cpp removed - not needed for localization mode
+# Main sources
 set(MAIN_SOURCES
+  src/main.cpp
   src/VINASlam.cpp
-  src/voxel_map.cpp
 )
 
 set(SOURCES
