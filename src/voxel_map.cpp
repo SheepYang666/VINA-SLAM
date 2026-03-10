@@ -1,4 +1,5 @@
 #include "vina_slam/voxel_map.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <Eigen/Geometry>
 
@@ -1591,6 +1592,108 @@ void OctoTree::recut(int win_count, std::vector<IMUST>& x_buf, std::vector<Slide
   for (int i = 0; i < 8; i++)
     if (leaves[i] != nullptr)
       leaves[i]->recut(win_count, x_buf, sws);
+}
+
+bool OctoTree::fit_scan_plane(const Eigen::Vector3d& sensor_pos)
+{
+  plane.is_plane = false;
+  isexist = (pcr_add.N != 0);
+
+  if (octo_state == 1)
+  {
+    bool has_plane = false;
+    for (int i = 0; i < 8; i++)
+    {
+      if (leaves[i] != nullptr)
+      {
+        has_plane = leaves[i]->fit_scan_plane(sensor_pos) || has_plane;
+      }
+    }
+    isexist = has_plane;
+    return has_plane;
+  }
+
+  if (pcr_add.N < 3)
+  {
+    return false;
+  }
+
+  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(pcr_add.cov());
+  eig_value = saes.eigenvalues();
+  eig_vector = saes.eigenvectors();
+  plane.is_plane = plane_judge(eig_value);
+
+  if (plane.is_plane)
+  {
+    plane.center = pcr_add.v / pcr_add.N;
+    plane.normal = eig_vector.col(0);
+    plane.radius = eig_value[2];
+
+    if (plane.normal.dot(plane.center - sensor_pos) > 0)
+    {
+      plane.normal = -plane.normal;
+    }
+
+    return true;
+  }
+
+  int min_points_subdivide = 3;
+  if (layer >= 0 && layer < min_point.size())
+  {
+    min_points_subdivide = std::max(3, static_cast<int>(min_point[layer]));
+  }
+
+  if (layer >= max_layer || pcr_add.N < min_points_subdivide || point_fix.empty())
+  {
+    return false;
+  }
+
+  octo_state = 1;
+  std::vector<SlideWindow*> scan_sws;
+  fix_divide(scan_sws);
+  PVec().swap(point_fix);
+
+  bool has_plane = false;
+  for (int i = 0; i < 8; i++)
+  {
+    if (leaves[i] != nullptr)
+    {
+      has_plane = leaves[i]->fit_scan_plane(sensor_pos) || has_plane;
+    }
+  }
+
+  isexist = has_plane;
+  return has_plane;
+}
+
+OctoTree* OctoTree::find_fine_plane(Eigen::Vector3d& wld)
+{
+  if (!inside(wld))
+  {
+    return nullptr;
+  }
+
+  if (octo_state == 1)
+  {
+    for (int i = 0; i < 8; i++)
+    {
+      if (leaves[i] != nullptr && leaves[i]->inside(wld))
+      {
+        OctoTree* finer = leaves[i]->find_fine_plane(wld);
+        if (finer != nullptr)
+        {
+          return finer;
+        }
+      }
+    }
+  }
+
+  if (plane.is_plane)
+  {
+    return this;
+  }
+
+  return nullptr;
 }
 
 void OctoTree::margi(int win_count, int mgsize, std::vector<IMUST>& x_buf, const LidarFactor& vox_opt)

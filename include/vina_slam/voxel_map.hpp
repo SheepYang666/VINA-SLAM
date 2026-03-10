@@ -256,6 +256,10 @@ public:
 
   void recut(int win_count, std::vector<IMUST>& x_buf, std::vector<SlideWindow*>& sws);
 
+  bool fit_scan_plane(const Eigen::Vector3d& sensor_pos);
+
+  OctoTree* find_fine_plane(Eigen::Vector3d& wld);
+
   void margi(int win_count, int mgsize, std::vector<IMUST>& x_buf, const LidarFactor& vox_opt);
 
   void tras_opt(LidarFactor& vox_opt);
