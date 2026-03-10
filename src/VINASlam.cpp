@@ -1,5 +1,6 @@
 #include "vina_slam/VINASlam.hpp"
 #include "vina_slam/voxel_map.hpp"
+#include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/pipeline/initialization.hpp"
 #include "vina_slam/platform/ros2/publishers.hpp"
 #include "vina_slam/platform/ros2/io.hpp"
@@ -16,12 +17,10 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include <rclcpp/executors/multi_threaded_executor.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/time.hpp>
-// Initialization class moved to vina_slam/pipeline/initialization.hpp
 
 VINA_SLAM& VINA_SLAM::Instance(const rclcpp::Node::SharedPtr& node_in)
 {
@@ -78,48 +77,10 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   if_BA = node->declare_parameter<int>("General.if_BA", false);
   node->get_parameter("General.if_BA", if_BA);
 
-  // ######################################## print log ########################################
-
-  if (is_save_map == 0)
-  {
-    std::cout << YELLOW << "[is_save_map]: don't save map" << RESET << std::endl;
-  }
-  else if (is_save_map == 1)
-  {
-    std::cout << GREEN << "[is_save_map]: save map" << RESET << std::endl;
-  }
-  else
-  {
-    std::cout << RED << "[is_save_map]: ERROR STATE " << RESET << std::endl;
-  }
-
-  if (if_loop_dect == 0)
-  {
-    std::cout << YELLOW << "[if_loop_dect]: loop don't dect" << RESET << std::endl;
-  }
-  else if (if_loop_dect == 1)
-  {
-    std::cout << GREEN << "[if_loop_dect]: loop dect" << RESET << std::endl;
-  }
-  else
-  {
-    std::cout << RED << "[if_loop_dect]: ERROR STATE " << RESET << std::endl;
-  }
-
-  if (if_BA == 0)
-  {
-    std::cout << YELLOW << "[if_BA]: don't BA" << RESET << std::endl;
-  }
-  else if (if_BA == 1)
-  {
-    std::cout << GREEN << "[if_BA]: BA" << RESET << std::endl;
-  }
-  else
-  {
-    std::cout << RED << "[if_BA]: ERROR STATE " << RESET << std::endl;
-  }
-
-  // ######################################## print log ########################################
+  // Log configuration
+  RCLCPP_INFO(node->get_logger(), "is_save_map: %s", is_save_map ? "ON" : "OFF");
+  RCLCPP_INFO(node->get_logger(), "if_loop_dect: %s", if_loop_dect ? "ON" : "OFF");
+  RCLCPP_INFO(node->get_logger(), "if_BA: %s", if_BA ? "ON" : "OFF");
 
   // 订阅器初始化
 
@@ -245,204 +206,50 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   noiseMeas.diagonal() << cov_gyr, cov_gyr, cov_gyr, cov_acc, cov_acc, cov_acc;
   noiseWalk.diagonal() << rand_walk_gyr, rand_walk_gyr, rand_walk_gyr, rand_walk_acc, rand_walk_acc, rand_walk_acc;
 
-  int ss = 0;
-  if (access((savepath + bagname + "/").c_str(), X_OK) == -1)
+  if (is_save_map == 1)
   {
-    string cmd = "mkdir " + savepath + bagname + "/";
-    ss = system(cmd.c_str());
-  }
-  else
-    ss = -1;
-
-  if (ss != 0 && is_save_map == 1)
-  {
-    printf("The pointcloud will be saved in this run.\n");
-    printf("So please clear or rename the existed folder.\n");
-    exit(0);
+    std::filesystem::path save_dir = std::filesystem::path(savepath) / bagname;
+    if (std::filesystem::exists(save_dir))
+    {
+      RCLCPP_WARN(node->get_logger(), "Save directory already exists: %s", save_dir.c_str());
+    }
+    else
+    {
+      std::error_code ec;
+      std::filesystem::create_directories(save_dir, ec);
+      if (ec)
+      {
+        RCLCPP_ERROR(node->get_logger(), "Failed to create save directory: %s (%s)",
+                     save_dir.c_str(), ec.message().c_str());
+      }
+    }
   }
 
   sws.resize(thread_num);
-  cout << "bagname: " << bagname << endl;
-}
-
-bool VINA_SLAM::LioStateEstimation(PVecPtr pptr)
-{
-  IMUST x_prop = x_curr;
-
-  const int num_max_iter = 4;
-  bool EKF_stop_flg = false;
-  bool flg_EKF_converged = false;
-  Eigen::Matrix<double, DIM, DIM> G, H_T_H, I_STATE;
-  G.setZero();
-  H_T_H.setZero();
-  I_STATE.setIdentity();
-  int rematch_num = 0;
-  int match_num = 0;
-
-  int psize = pptr->size();
-  vector<OctoTree*> octos(psize, nullptr);
-
-  Eigen::Matrix3d nnt;
-  Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
-
-  // Check for NaN in covariance inverse (indicates numerical instability)
-  if (!cov_inv.allFinite())
-  {
-    RCLCPP_WARN(node->get_logger(), "LioStateEstimation: covariance inverse contains NaN/Inf, resetting covariance");
-    x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
-    cov_inv = x_curr.cov.inverse();
-  }
-
-  for (int iterCount = 0; iterCount < num_max_iter; iterCount++)
-  {
-    Eigen::Matrix<double, 6, 6> HTH;
-    HTH.setZero();
-    Eigen::Matrix<double, 6, 1> HTz;
-    HTz.setZero();
-
-    Eigen::Matrix3d rot_var = x_curr.cov.block<3, 3>(0, 0);
-    Eigen::Matrix3d tsl_var = x_curr.cov.block<3, 3>(3, 3);
-
-    match_num = 0;
-    nnt.setZero();
-
-    for (int i = 0; i < psize; i++)
-    {
-      pointVar& pv = pptr->at(i);
-      Eigen::Matrix3d phat = hat(pv.pnt);
-
-      Eigen::Matrix3d var_world =
-          x_curr.R * pv.var * x_curr.R.transpose() + phat * rot_var * phat.transpose() + tsl_var;
-      Eigen::Vector3d wld = x_curr.R * pv.pnt + x_curr.p;
-
-      double sigma_d = 0;
-      Plane* pla = nullptr;
-      int flag = 0;
-
-      if (octos[i] != nullptr && octos[i]->inside(wld))
-      {
-        double max_prob = 0;
-        flag = octos[i]->match(wld, pla, max_prob, var_world, sigma_d, octos[i]);
-      }
-      else
-      {
-        flag = match(surf_map, wld, pla, var_world, sigma_d, octos[i]);
-      }
-
-      if (flag)
-      {
-        Plane& pp = *pla;
-        double R_inv = 1.0 / (0.0005 + sigma_d);
-        double resi = pp.normal.dot(wld - pp.center);
-
-        Eigen::Matrix<double, 6, 1> jac;
-        jac.head(3) = phat * x_curr.R.transpose() * pp.normal;
-        jac.tail(3) = pp.normal;
-        HTH += R_inv * jac * jac.transpose();
-        HTz -= R_inv * jac * resi;
-        nnt += pp.normal * pp.normal.transpose();
-        match_num++;
-      }
-    }
-
-    H_T_H.block<6, 6>(0, 0) = HTH;
-
-    Eigen::Matrix<double, DIM, DIM> K_1 = (H_T_H + cov_inv).inverse();
-
-    G.block<DIM, 6>(0, 0) = K_1.block<DIM, 6>(0, 0) * HTH;
-
-    Eigen::Matrix<double, DIM, 1> vec = x_prop - x_curr;
-
-    Eigen::Matrix<double, DIM, 1> solution =
-        K_1.block<DIM, 6>(0, 0) * HTz + vec - G.block<DIM, 6>(0, 0) * vec.block<6, 1>(0, 0);
-
-    x_curr += solution;
-
-    Eigen::Vector3d rot_add = solution.block<3, 1>(0, 0);
-    Eigen::Vector3d tra_add = solution.block<3, 1>(3, 0);
-
-    EKF_stop_flg = false;
-    flg_EKF_converged = false;
-
-    if ((rot_add.norm() * kRadToDeg < kRotConvergeThreshDeg) && (tra_add.norm() * kMeterToCm < kTraConvergeThreshCm))
-    {
-      flg_EKF_converged = true;
-    }
-
-    if (flg_EKF_converged || ((rematch_num == 0) && (iterCount == num_max_iter - 2)))
-    {
-      rematch_num++;
-    }
-
-    if (rematch_num >= 2 || (iterCount == num_max_iter - 1))
-    {
-      x_curr.cov = (I_STATE - G) * x_curr.cov;
-      EKF_stop_flg = true;
-    }
-
-    if (EKF_stop_flg)
-    {
-      break;
-    }
-  }
-
-  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(nnt);
-  Eigen::Vector3d evalue = saes.eigenvalues();
-
-  if (evalue[0] < kPlaneEigenvalueThresh)
-  {
-    return false;
-  }
-  else
-  {
-    return true;
-  }
+  RCLCPP_INFO(node->get_logger(), "VINA_SLAM initialized: bag=%s, win=%d, voxel=%.2f, BA=%d",
+              bagname.c_str(), win_size, voxel_size, if_BA);
 }
 
 // ============================================================================
-// VNC (Vector Normal Consistency) LIO State Estimation
+// VNC Helper: Scan plane extraction for normal consistency constraints
 // ============================================================================
-// Extends LioStateEstimation with additional rotation constraint from
-// normal vector consistency between scan and map planes.
-//
-// Algorithm overview:
-//   1. [IEKF外] 对当前scan（body系）做体素化 + fit_scan_plane（含八叉树细分），
-//      使用和BA recut完全一致的平面判据（plane_judge: min_eigen_value,
-//      plane_eigen_value_thre, min_point, max_layer），提取所有scan平面的
-//      法向量和中心点（均在body系下存储）。
-//   2. [IEKF内 每次迭代]
-//      a) 逐点做 point-to-plane 残差（与LioStateEstimation完全一致）
-//      b) 对每个scan平面：将body系center投影到世界系，在surf_map中match
-//         得到map平面法向量n_map，然后用投影残差
-//         r = (I - n_map * n_map^T) * R * n_scan_body 约束旋转
-//   3. 退化检测（与LioStateEstimation一致）
-//
-// See: docs/theory/unified_residual_framework.md for theoretical details.
-// ============================================================================
-
-// Helper: recursively collect all valid leaf planes from an OctoTree.
-// Uses the same traversal pattern as trasOpt(NormalFactor) in BA.
-// Planes are collected in body frame (as stored by generate_voxel + fit_scan_plane).
 namespace {
 
 struct ScanPlaneInfo {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   Eigen::Vector3d center_body;      ///< Plane center in body frame
   Eigen::Vector3d normal_body;      ///< Plane normal in body frame (unit vector)
-  Eigen::Matrix3d skew_normal_body; ///< Skew-symmetric [normal_body]× (cached)
-  double quality;                   ///< Plane quality ∈ (0,1], higher = flatter plane
+  Eigen::Matrix3d skew_normal_body; ///< Skew-symmetric [normal_body]x (cached)
+  double quality;                   ///< Plane quality in (0,1], higher = flatter
   double sigma_n;                   ///< Normal estimation uncertainty
 };
 
-/// @brief Recursively collect valid leaf planes from an OctoTree node.
-/// Uses the same planarity criteria as BA: eig_value[0]/eig_value[1] <= 0.12
 void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
 {
   if (ot == nullptr) return;
 
   if (ot->octo_state == 0)
   {
-    // Leaf node — check if it has a valid plane (same check as trasOpt in BA)
     if (ot->plane.is_plane && ot->eig_value[1] > 1e-12 &&
         ot->eig_value[0] / ot->eig_value[1] <= 0.12)
     {
@@ -466,7 +273,6 @@ void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
   }
   else
   {
-    // Internal node — recurse into children
     for (int i = 0; i < 8; ++i)
       collectScanPlanes(ot->leaves[i], planes);
   }
@@ -474,10 +280,11 @@ void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
 
 } // anonymous namespace
 
-bool VINA_SLAM::VNCLio(PVecPtr pptr)
+// ============================================================================
+// Unified LIO State Estimation (point-to-plane + optional VNC normal constraint)
+// ============================================================================
+bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
 {
-  // Note: Constants (kRadToDeg, kMeterToCm, etc.) are globally defined in constants.hpp
-
   IMUST x_prop = x_curr;
 
   const int num_max_iter = 4;
@@ -496,55 +303,40 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
   Eigen::Matrix3d nnt;
   Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
 
-  // Check for NaN in covariance inverse (indicates numerical instability)
   if (!cov_inv.allFinite())
   {
-    RCLCPP_WARN(node->get_logger(), "VNCLio: covariance inverse contains NaN/Inf, resetting covariance");
+    RCLCPP_WARN(node->get_logger(), "LioStateEstimation: cov inverse NaN/Inf, resetting");
     x_curr.cov = Eigen::Matrix<double, DIM, DIM>::Identity() * 1e-3;
     cov_inv = x_curr.cov.inverse();
   }
 
-  // ========== VNC Parameters ==========
-  // VNC_ALPHA: weight coefficient for normal consistency residual relative to point-to-plane
-  // VNC_EPSILON: skip threshold for near-parallel normals (numerical stability)
+  // ======================================================================
+  // VNC pre-processing: extract scan planes in body frame (only if enabled)
+  // ======================================================================
   const double VNC_ALPHA = 0.1;
   const double VNC_EPSILON = 1e-6;
 
-  // ======================================================================
-  // Step 1: Extract scan plane normals in body frame (OUTSIDE IEKF loop)
-  // ======================================================================
-  // Build temporary voxel map for the current scan in body frame.
-  // Uses the body-frame overload of generate_voxel (no coordinate transform).
-  // Then fit_scan_plane performs SVD + plane_judge with subdivision — this is
-  // identical to how BA's recut extracts planes (same parameters: min_eigen_value,
-  // plane_eigen_value_thre, min_point, max_layer).
   unordered_map<VOXEL_LOC, OctoTree*> scan_voxels;
-  PVec pvec_body = *pptr;  // copy in body frame
-  generate_voxel(scan_voxels, pvec_body, voxel_size);
-
-  // fit_scan_plane triggers SVD and octree subdivision for each voxel,
-  // using sensor_pos = origin (body frame sensor is at origin).
-  Eigen::Vector3d sensor_origin_body = Eigen::Vector3d::Zero();
-  for (auto& kv : scan_voxels)
-  {
-    kv.second->fit_scan_plane(sensor_origin_body);
-  }
-
-  // Collect all valid leaf planes from the scan octrees.
-  // The collection uses the same eigenvalue ratio check (<=0.12) as BA's trasOpt.
   std::vector<ScanPlaneInfo> scan_planes;
-  scan_planes.reserve(scan_voxels.size());
-  for (auto& kv : scan_voxels)
-  {
-    collectScanPlanes(kv.second, scan_planes);
-  }
-  const int num_scan_planes = static_cast<int>(scan_planes.size());
+  int num_scan_planes = 0;
 
-  RCLCPP_DEBUG(node->get_logger(), "VNCLio: extracted %d scan planes from %zu voxels",
-               num_scan_planes, scan_voxels.size());
+  if (use_vnc)
+  {
+    PVec pvec_body = *pptr;
+    generate_voxel(scan_voxels, pvec_body, voxel_size);
+
+    Eigen::Vector3d sensor_origin_body = Eigen::Vector3d::Zero();
+    for (auto& kv : scan_voxels)
+      kv.second->fit_scan_plane(sensor_origin_body);
+
+    scan_planes.reserve(scan_voxels.size());
+    for (auto& kv : scan_voxels)
+      collectScanPlanes(kv.second, scan_planes);
+    num_scan_planes = static_cast<int>(scan_planes.size());
+  }
 
   // ======================================================================
-  // Step 2: IEKF Iterative Update
+  // IEKF iterative update
   // ======================================================================
   for (int iterCount = 0; iterCount < num_max_iter; iterCount++)
   {
@@ -559,9 +351,7 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     match_num = 0;
     nnt.setZero();
 
-    // ------------------------------------------------------------------
-    // 2a. Point-to-Plane residuals (identical to LioStateEstimation)
-    // ------------------------------------------------------------------
+    // -- Point-to-plane residuals --
     for (int i = 0; i < psize; i++)
     {
       pointVar& pv = pptr->at(i);
@@ -601,93 +391,58 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
       }
     }
 
-    // ------------------------------------------------------------------
-    // 2b. VNC normal consistency residuals
-    // ------------------------------------------------------------------
-    // For each scan plane (stored in body frame), project its center to
-    // world frame using current x_curr, then match in surf_map to find
-    // the corresponding map plane normal. Compute the tangent-space
-    // projection residual: r = (I - n_map * n_map^T) * R * n_scan_body
-    int vnc_count = 0;
-    for (int sp_idx = 0; sp_idx < num_scan_planes; sp_idx++)
+    // -- VNC normal consistency residuals (only if enabled) --
+    if (use_vnc)
     {
-      const ScanPlaneInfo& sp = scan_planes[sp_idx];
-
-      // Transform scan plane center from body to world frame
-      Eigen::Vector3d center_world = x_curr.R * sp.center_body + x_curr.p;
-
-      // Find the corresponding map voxel using the center point
-      float loc[3];
-      for (int j = 0; j < 3; j++)
+      for (int sp_idx = 0; sp_idx < num_scan_planes; sp_idx++)
       {
-        loc[j] = center_world[j] / voxel_size;
-        if (loc[j] < 0)
-          loc[j] -= 1;
+        const ScanPlaneInfo& sp = scan_planes[sp_idx];
+        Eigen::Vector3d center_world = x_curr.R * sp.center_body + x_curr.p;
+
+        float loc[3];
+        for (int j = 0; j < 3; j++)
+        {
+          loc[j] = center_world[j] / voxel_size;
+          if (loc[j] < 0) loc[j] -= 1;
+        }
+        VOXEL_LOC position(static_cast<int64_t>(loc[0]),
+                           static_cast<int64_t>(loc[1]),
+                           static_cast<int64_t>(loc[2]));
+
+        auto iter = surf_map.find(position);
+        if (iter == surf_map.end()) continue;
+
+        OctoTree* map_ot = iter->second->find_fine_plane(center_world);
+        if (map_ot == nullptr || !map_ot->plane.is_plane) continue;
+
+        Eigen::Vector3d n_map = map_ot->plane.normal.normalized();
+        Eigen::Vector3d n_scan_world = x_curr.R * sp.normal_body;
+
+        Eigen::Matrix3d S = Eigen::Matrix3d::Identity() - n_map * n_map.transpose();
+        Eigen::Vector3d r_vec = S * n_scan_world;
+        double r_n = r_vec.norm();
+        if (r_n < VNC_EPSILON) continue;
+
+        Eigen::Vector3d t = r_vec / r_n;
+
+        Eigen::Matrix<double, 6, 1> jac_n;
+        jac_n.head(3) = (t.transpose() * x_curr.R * sp.skew_normal_body).transpose();
+        jac_n.tail(3) = Eigen::Vector3d::Zero();
+
+        double w_n = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
+
+        HTH += w_n * jac_n * jac_n.transpose();
+        HTz -= w_n * jac_n * r_n;
       }
-      VOXEL_LOC position(static_cast<int64_t>(loc[0]),
-                         static_cast<int64_t>(loc[1]),
-                         static_cast<int64_t>(loc[2]));
-
-      auto iter = surf_map.find(position);
-      if (iter == surf_map.end())
-        continue;
-
-      // Find the finest-level map plane containing this center point
-      OctoTree* map_ot = iter->second->find_fine_plane(center_world);
-      if (map_ot == nullptr || !map_ot->plane.is_plane)
-        continue;
-
-      Eigen::Vector3d n_map = map_ot->plane.normal.normalized();
-
-      // Transform scan normal from body to world frame
-      Eigen::Vector3d n_scan_world = x_curr.R * sp.normal_body;
-
-      // Tangent-space projection: project scan normal onto the plane
-      // perpendicular to n_map. If normals are consistent, r_vec ≈ 0.
-      // This is the same residual form as BA NormalFactor:
-      //   S = I - n_map * n_map^T  (projection matrix)
-      //   r_vec = S * n_scan_world
-      Eigen::Matrix3d S = Eigen::Matrix3d::Identity() - n_map * n_map.transpose();
-      Eigen::Vector3d r_vec = S * n_scan_world;
-      double r_n = r_vec.norm();
-
-      // Skip near-parallel normals (residual ≈ 0, numerically unstable)
-      if (r_n < VNC_EPSILON)
-        continue;
-
-      // Direction of the residual in tangent plane
-      Eigen::Vector3d t = r_vec / r_n;
-
-      // VNC Jacobian (6×1):
-      //   ∂r_n/∂ξ_rot = t^T * R * [n_scan_body]×   (3×1 → transpose)
-      //   ∂r_n/∂ξ_trs = 0  (normal direction is translation-invariant)
-      Eigen::Matrix<double, 6, 1> jac_n;
-      jac_n.head(3) = (t.transpose() * x_curr.R * sp.skew_normal_body).transpose();
-      jac_n.tail(3) = Eigen::Vector3d::Zero();
-
-      // Weight: VNC_ALPHA * plane_quality / (sigma_n^2 + regularization)
-      double w_n = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
-
-      // Accumulate into the same HTH / HTz (same IEKF framework)
-      HTH += w_n * jac_n * jac_n.transpose();
-      HTz -= w_n * jac_n * r_n;
-      vnc_count++;
     }
 
-    RCLCPP_DEBUG(node->get_logger(), "VNCLio iter %d: %d pt matches, %d VNC pairs",
-                 iterCount, match_num, vnc_count);
-
-    // ------------------------------------------------------------------
-    // 2c. IEKF state update (identical to LioStateEstimation)
-    // ------------------------------------------------------------------
+    // -- IEKF state update --
     H_T_H.block<6, 6>(0, 0) = HTH;
 
     Eigen::Matrix<double, DIM, DIM> K_1 = (H_T_H + cov_inv).inverse();
-
     G.block<DIM, 6>(0, 0) = K_1.block<DIM, 6>(0, 0) * HTH;
 
     Eigen::Matrix<double, DIM, 1> vec = x_prop - x_curr;
-
     Eigen::Matrix<double, DIM, 1> solution =
         K_1.block<DIM, 6>(0, 0) * HTz + vec - G.block<DIM, 6>(0, 0) * vec.block<6, 1>(0, 0);
 
@@ -700,14 +455,10 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
     flg_EKF_converged = false;
 
     if ((rot_add.norm() * kRadToDeg < kRotConvergeThreshDeg) && (tra_add.norm() * kMeterToCm < kTraConvergeThreshCm))
-    {
       flg_EKF_converged = true;
-    }
 
     if (flg_EKF_converged || ((rematch_num == 0) && (iterCount == num_max_iter - 2)))
-    {
       rematch_num++;
-    }
 
     if (rematch_num >= 2 || (iterCount == num_max_iter - 1))
     {
@@ -715,38 +466,34 @@ bool VINA_SLAM::VNCLio(PVecPtr pptr)
       EKF_stop_flg = true;
     }
 
-    if (EKF_stop_flg)
-    {
-      break;
-    }
+    if (EKF_stop_flg) break;
   }
 
   // ======================================================================
-  // Step 3: Cleanup temporary scan voxels
+  // Cleanup temporary scan voxels (VNC only)
   // ======================================================================
-  for (auto& kv : scan_voxels)
+  if (use_vnc)
   {
-    kv.second->delete_ptr();
-    delete kv.second;
+    for (auto& kv : scan_voxels)
+    {
+      kv.second->delete_ptr();
+      delete kv.second;
+    }
+    scan_voxels.clear();
   }
-  scan_voxels.clear();
 
   // ======================================================================
-  // Step 4: Degeneracy check (identical to LioStateEstimation)
+  // Degeneracy check
   // ======================================================================
-  // Check if the accumulated normal outer product nnt has three
-  // sufficiently large eigenvalues → non-degenerate geometry.
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(nnt);
   Eigen::Vector3d evalue = saes.eigenvalues();
+  return (evalue[0] >= kPlaneEigenvalueThresh);
+}
 
-  if (evalue[0] < kPlaneEigenvalueThresh)
-  {
-    return false;
-  }
-  else
-  {
-    return true;
-  }
+// Backward compatibility: VNCLio calls unified method with VNC enabled
+bool VINA_SLAM::VNCLio(PVecPtr pptr)
+{
+  return LioStateEstimation(pptr, true);
 }
 
 // VNC_lio removed - was duplicate of lio_state_estimation (dead code, saved ~125 lines)
@@ -1145,7 +892,7 @@ void VINA_SLAM::ResetSystem(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus)
   pcl_path.clear();
   pub_pl_func(pcl_path, pub_cmap, node);
 
-  std::cout << "\033[31mReset\033[0m" << std::endl;
+  RCLCPP_WARN(node->get_logger(), "System reset triggered");
 }
 
 void VINA_SLAM::MultiMarginalize(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, double jour, int win_count,
@@ -1162,7 +909,6 @@ void VINA_SLAM::MultiMarginalize(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, 
   if (g_size < thd_num)  // 体素数量不足以分配给所有线程，直接返回
     return;
 
-  vector<thread*> mthreads(thd_num);
   double part = 1.0 * g_size / thd_num;  // 平均分配体素数量
   int cnt = 0;
 
@@ -1183,25 +929,15 @@ void VINA_SLAM::MultiMarginalize(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, 
     }
   };
 
-  // 创建多个线程并行执行边缘化任务，主线程执行第0块任务
+  // Launch worker threads; main thread handles partition 0
+  std::vector<std::thread> threads;
+  threads.reserve(thd_num - 1);
   for (int i = 1; i < thd_num; i++)
-  {
-    mthreads[i] = new thread(margi_func, win_count, octs[i], xs, ref(voxopt));
-  }
+    threads.emplace_back(margi_func, win_count, octs[i], xs, ref(voxopt));
 
-  // 等待所有子线程完成，清理线程资源
-  for (int i = 0; i < thd_num; i++)
-  {
-    if (i == 0)
-    {
-      margi_func(win_count, octs[i], xs, voxopt);
-    }
-    else
-    {
-      mthreads[i]->join();
-      delete mthreads[i];
-    }
-  }
+  margi_func(win_count, octs[0], xs, voxopt);
+
+  for (auto& t : threads) t.join();
 
   // 遍历体素地图，移除无效体素节点并清理滑动窗口数据
   for (auto iter = feat_map.begin(); iter != feat_map.end();)
@@ -1236,7 +972,6 @@ void VINA_SLAM::MultiRecutImpl(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, in
     return;
   }
 
-  vector<thread*> mthreads(thd_num);
   double part = 1.0 * g_size / thd_num;
   int cnt = 0;
 
@@ -1256,23 +991,15 @@ void VINA_SLAM::MultiRecutImpl(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, in
     }
   };
 
-  // Launch threads
+  // Launch worker threads; main thread handles partition 0
+  std::vector<std::thread> threads;
+  threads.reserve(thd_num - 1);
   for (int i = 1; i < thd_num; i++)
-    mthreads[i] = new thread(recut_func, win_count, ref(octss[i]), xs, ref(sws[i]));
+    threads.emplace_back(recut_func, win_count, ref(octss[i]), xs, ref(sws[i]));
 
-  // Main thread does first batch, then joins others
-  for (int i = 0; i < thd_num; i++)
-  {
-    if (i == 0)
-    {
-      recut_func(win_count, octss[i], xs, sws[i]);
-    }
-    else
-    {
-      mthreads[i]->join();
-      delete mthreads[i];
-    }
-  }
+  recut_func(win_count, octss[0], xs, sws[0]);
+
+  for (auto& t : threads) t.join();
 
   // Merge slide windows
   for (size_t i = 1; i < sws.size(); i++)
@@ -1475,7 +1202,7 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
 
       if (init == 1)
       {
-        std::cout << RED << "init success" << RESET << std::endl;
+        RCLCPP_INFO(node->get_logger(), "Initialization succeeded");
 
         motion_init_flag = 0;
       }
@@ -1494,7 +1221,7 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
       //  EKF状态传播与点云预处理[motion blur Aft motion]
       if (odom_ekf.process(x_curr, *pcl_curr, imus) == 0)
       {
-        std::cout << RED << "motion blur failed" << RESET << std::endl;
+        RCLCPP_WARN(node->get_logger(), "Motion blur failed during initialization");
 
         continue;
       }
@@ -1653,7 +1380,7 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
       ShiftSlidingWindow(mgsize);
     }
     double mem = get_memory();
-    std::cout << GREEN << "mem:" << mem << RESET << std::endl;
+    RCLCPP_INFO(node->get_logger(), "Memory usage: %.2f GB", mem);
   }
 
   vector<OctoTree*> octos;
@@ -1677,7 +1404,9 @@ void VINA_SLAM::RunOdometryLocalMapping(std::shared_ptr<rclcpp::Node> node)
   sws[0].clear();
   malloc_trim(0);
 }
-// Build the pose graph in loop closure
+// Sensor callbacks (imu_handler, pcl_handler, sync_packages) remain here
+// for now as they access global variables. They will be migrated to
+// SensorSubscribers in a future phase.
 
 void imu_handler(const sensor_msgs::msg::Imu::SharedPtr& msg_in)
 {
@@ -1733,7 +1462,6 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
 {
   static bool pl_ready = false;
 
-  // Step 1: If the point cloud is not ready yet, take a frame out of the cache
   if (!pl_ready)
   {
     if (pcl_buf.empty())
@@ -1752,17 +1480,14 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
 
     p_imu.pcl_end_time = p_imu.pcl_beg_time + pl_ptr->back().curvature;
 
-    // If the time stamp mode is turned on, the time information is simulated using frame time intervals.
     if (point_notime)
     {
       if (last_pcl_time < 0)
       {
         last_pcl_time = p_imu.pcl_beg_time;
-
         return false;
       }
 
-      // Manually set the start/end time of point cloud frame
       p_imu.pcl_end_time = p_imu.pcl_beg_time;
       p_imu.pcl_beg_time = last_pcl_time;
       last_pcl_time = p_imu.pcl_end_time;
@@ -1780,7 +1505,6 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
     return false;
   }
 
-  // Step 3: Extract IMU data in the range [pcl_beg_time, pcl_end_time]
   mBuf.lock();
   double imu_time = rclcpp::Time(imu_buf.front()->header.stamp).seconds();
   while ((!imu_buf.empty()) && (imu_time < p_imu.pcl_end_time))
@@ -1788,168 +1512,18 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
     imu_time = rclcpp::Time(imu_buf.front()->header.stamp).seconds();
     if (imu_time > p_imu.pcl_end_time)
       break;
-    imus.push_back(imu_buf.front());  // Press the corresponding IMU data of the current frame
+    imus.push_back(imu_buf.front());
     imu_buf.pop_front();
   }
   mBuf.unlock();
 
-  // If the IMU data is used up, it means the data flow is broken and the program is exited
   if (imu_buf.empty())
   {
-    exit(0);
-  }
-
-  pl_ready = false;  // The current frame processing is completed, the flag is reset
-
-  // If the number of paired IMU data is greater than 4, the synchronization is considered successful
-  if (imus.size() > 4)
-  {
-    return true;
-  }
-  else
-  {
+    RCLCPP_ERROR(rclcpp::get_logger("vina_slam"), "IMU buffer empty - data flow interrupted");
     return false;
   }
-}
 
-void calcBodyVar(Eigen::Vector3d& pb, const float range_inc, const float degree_inc, Eigen::Matrix3d& var)
-{
-  // To prevent division by 0, make sure that the z coordinate is non-zero (avoid singular division)
-  if (pb[2] == 0)
-  {
-    pb[2] = 0.0001;
-  }
+  pl_ready = false;
 
-  float range = sqrt(pb[0] * pb[0] + pb[1] * pb[1] + pb[2] * pb[2]);
-  float range_var = range_inc * range_inc;
-
-  // Construct the direction angle error covariance matrix (units in radians)
-  Eigen::Matrix2d direction_var;
-  direction_var << pow(sin(DEG2RAD(degree_inc)), 2), 0, 0, pow(sin(DEG2RAD(degree_inc)), 2);
-
-  Eigen::Vector3d direction(pb);
-  direction.normalize();
-
-  Eigen::Matrix3d direction_hat;
-  direction_hat << 0, -direction(2), direction(1), direction(2), 0, -direction(0), -direction(1), direction(0), 0;
-
-  Eigen::Vector3d base_vector1(1, 1, -(direction(0) + direction(1)) / direction(2));
-  base_vector1.normalize();
-
-  Eigen::Vector3d base_vector2 = base_vector1.cross(direction);
-  base_vector2.normalize();
-
-  // Construct orthogonal projection substrate matrix N ∈ ℝ³×²
-  Eigen::Matrix<double, 3, 2> N;
-  N << base_vector1(0), base_vector2(0), base_vector1(1), base_vector2(1), base_vector1(2), base_vector2(2);
-
-  // Construct the angle error term direction projection matrix A ∈ ℝ³×²
-  Eigen::Matrix<double, 3, 2> A = range * direction_hat * N;
-
-  // Construct the population covariance matrix: V = σ_r² *r̂ *r̂^T + A *σ_ang² *A^T
-  var = direction * range_var * direction.transpose() + A * direction_var * A.transpose();
-};
-
-// Compute the variance of the each point
-
-void var_init(IMUST& ext, pcl::PointCloud<PointType>& pl_cur, PVecPtr pptr, double dept_err, double beam_err)
-{
-  int plsize = pl_cur.size();
-  pptr->clear();
-  pptr->resize(plsize);
-
-  for (int i = 0; i < plsize; i++)
-  {
-    PointType& ap = pl_cur[i];
-    pointVar& pv = pptr->at(i);
-    pv.pnt << ap.x, ap.y, ap.z;
-    calcBodyVar(pv.pnt, dept_err, beam_err, pv.var);
-    pv.pnt = ext.R * pv.pnt + ext.p;
-    pv.var = ext.R * pv.var * ext.R.transpose();
-    pv.intensity = pl_cur[i].intensity;
-  }
-}
-
-void pvec_update(PVecPtr pptr, IMUST& x_curr, PLV(3) & pwld)
-{
-  Eigen::Matrix3d rot_var = x_curr.cov.block<3, 3>(0, 0);
-  Eigen::Matrix3d tsl_var = x_curr.cov.block<3, 3>(3, 3);
-
-  for (pointVar& pv : *pptr)
-  {
-    Eigen::Matrix3d phat = hat(pv.pnt);
-    pv.var = x_curr.R * pv.var * x_curr.R.transpose() + phat * rot_var * phat.transpose() + tsl_var;
-    pwld.push_back(x_curr.R * pv.pnt + x_curr.p);
-  }
-}
-
-// read_lidarstate removed - not needed for localization mode
-
-double get_memory()
-{
-  ifstream infile("/proc/self/status");
-  double mem = -1;
-  string lineStr, str;
-  while (getline(infile, lineStr))
-  {
-    stringstream ss(lineStr);
-    bool is_find = false;
-    while (ss >> str)
-    {
-      if (str == "VmRSS:")
-      {
-        is_find = true;
-        continue;
-      }
-
-      if (is_find)
-        mem = stod(str);
-      break;
-    }
-    if (is_find)
-      break;
-  }
-  return mem / (1048576);
-}
-
-// icp_check removed - not needed for localization mode
-
-int main(int argc, char** argv)
-{
-  rclcpp::init(argc, argv);
-
-  auto node = std::make_shared<rclcpp::Node>("vina_slam");
-  auto exec = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
-
-  exec->add_node(node);
-
-  pub_cmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_cmap", 100);
-  pub_pmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_pmap", 100);
-  pub_prev_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_true", 100);
-  pub_init = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_init", 100);
-
-  pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_scan", 100);
-  pub_curr_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_path", 100);
-  pub_test = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_test", 100);
-  pub_voxel_plane = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_plane", 10);
-  pub_voxel_normal = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_normal", 10);
-  pub_pmap_livox = node->create_publisher<livox_ros_driver2::msg::CustomMsg>("/map_pmap_livox", 10);
-
-  vina_slam::platform::ros2::ResultPublisher::instance(node);
-  vina_slam::platform::ros2::FileReaderWriter::instance(node);
-  vina_slam::pipeline::Initialization::instance(node);
-  VINA_SLAM vs(node);
-
-  mp.resize(vs.win_size);
-  for (size_t i = 0; i < mp.size(); i++)
-  {
-    mp[i] = i;
-  }
-
-  std::thread thread_odom(&VINA_SLAM::thd_odometry_localmapping, &vs, node);
-
-  exec->spin();
-  thread_odom.join();
-
-  return 0;
+  return (imus.size() > 4);
 }
