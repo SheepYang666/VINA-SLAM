@@ -6,6 +6,7 @@
 #include "vina_slam/core/point_utils.hpp"
 #include <cmath>
 #include <fstream>
+#include <rclcpp/logging.hpp>
 #include <sstream>
 #include <string>
 
@@ -51,16 +52,47 @@ void varInit(IMUST& ext, pcl::PointCloud<PointType>& pl_cur, PVecPtr pptr,
              double dept_err, double beam_err) {
   int plsize = pl_cur.size();
   pptr->clear();
-  pptr->resize(plsize);
+  pptr->reserve(plsize);
+  int invalid_raw_count = 0;
+  int invalid_transformed_count = 0;
+  Eigen::Vector3d first_invalid_raw = Eigen::Vector3d::Zero();
+  Eigen::Vector3d first_invalid_transformed = Eigen::Vector3d::Zero();
 
   for (int i = 0; i < plsize; i++) {
     PointType& ap = pl_cur[i];
-    pointVar& pv = pptr->at(i);
+    if (!std::isfinite(ap.x) || !std::isfinite(ap.y) || !std::isfinite(ap.z)) {
+      if (invalid_raw_count == 0) {
+        first_invalid_raw << ap.x, ap.y, ap.z;
+      }
+      invalid_raw_count++;
+      continue;
+    }
+
+    pointVar pv;
     pv.pnt << ap.x, ap.y, ap.z;
     calcBodyVar(pv.pnt, dept_err, beam_err, pv.var);
     pv.pnt = ext.R * pv.pnt + ext.p;
     pv.var = ext.R * pv.var * ext.R.transpose();
     pv.intensity = pl_cur[i].intensity;
+
+    if (!pv.pnt.allFinite() || !pv.var.allFinite()) {
+      if (invalid_transformed_count == 0) {
+        first_invalid_transformed = pv.pnt;
+      }
+      invalid_transformed_count++;
+      continue;
+    }
+
+    pptr->push_back(pv);
+  }
+
+  if (invalid_raw_count > 0 || invalid_transformed_count > 0) {
+    RCLCPP_WARN(
+        rclcpp::get_logger("vina_slam"),
+        "varInit filtered invalid points: raw=%d first_raw=[%.6f %.6f %.6f], transformed=%d first_pnt=[%.6f %.6f %.6f], valid=%zu/%d",
+        invalid_raw_count, first_invalid_raw.x(), first_invalid_raw.y(), first_invalid_raw.z(),
+        invalid_transformed_count, first_invalid_transformed.x(), first_invalid_transformed.y(),
+        first_invalid_transformed.z(), pptr->size(), plsize);
   }
 }
 

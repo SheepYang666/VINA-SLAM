@@ -25,12 +25,17 @@ namespace {
 
 void cutVoxel(std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_map,
               core::PVecPtr pvec, int win_count,
-              std::unordered_map<core::VOXEL_LOC, OctoTree*>& /*feat_tem_map*/,
+              std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_tem_map,
               int wdsize, PLV(3)& pwld, std::vector<SlideWindow*>& sws) {
+  if (pvec == nullptr || pvec->empty() || pwld.empty()) {
+    return;
+  }
+
+  const size_t point_count = std::min(pvec->size(), pwld.size());
   double loc_xyz[3];
-  for (core::pointVar& pv : *pvec) {
-    Eigen::Vector3d pw(pv.pnt[0], pv.pnt[1], pv.pnt[2]);
-    pwld.push_back(pw);
+  for (size_t i = 0; i < point_count; ++i) {
+    core::pointVar& pv = pvec->at(i);
+    const Eigen::Vector3d& pw = pwld[i];
 
     for (int j = 0; j < 3; j++) {
       loc_xyz[j] = pw[j] / voxel_size;
@@ -49,8 +54,10 @@ void cutVoxel(std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_map,
       ot->quater_length = voxel_size / 2;
       ot->push(win_count, pv, pw, sws);
       feat_map[position] = ot;
+      feat_tem_map[position] = ot;
     } else {
       iter->second->push(win_count, pv, pw, sws);
+      feat_tem_map[position] = iter->second;
     }
   }
 }

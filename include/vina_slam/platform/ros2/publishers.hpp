@@ -115,6 +115,17 @@ public:
                            rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr& pub);
 
   /**
+   * @brief Publish the current accumulated trajectory snapshot
+   * @param pcl_path Trajectory point cloud
+   */
+  void publishCurrentPath(const pcl::PointCloud<core::PointType>& pcl_path);
+
+  /**
+   * @brief Clear the current trajectory topic by publishing an empty point cloud
+   */
+  void clearCurrentPath();
+
+  /**
    * @brief Publish Livox format point cloud
    * @param pl Point cloud to publish
    */
