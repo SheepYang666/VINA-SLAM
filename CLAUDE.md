@@ -52,7 +52,6 @@ src/
 - `pointVar` / `PVec` / `PVecPtr` — point with 3×3 covariance, used throughout estimation and mapping.
 - `PointCluster` — accumulates second-moment statistics (P, v, N) for efficient plane fitting without storing raw points.
 - `VOXEL_LOC` — integer 3D key for the `unordered_map<VOXEL_LOC, OctoTree*>` voxel hash map.
-- `VNCPair` — scan normal ↔ map normal pair for VNC (Vector Normal Consistency) rotation constraints.
 
 ### Voxel Map & OctoTree (`mapping/`)
 
@@ -65,7 +64,7 @@ The global map is `unordered_map<VOXEL_LOC, OctoTree*> surf_map`. Each `OctoTree
 ### Estimation Pipeline
 
 - **IEKF** (`LioStateEstimation`): iterates point-to-plane residuals to converge state. Convergence thresholds in `constants.hpp` (`kRotConvergeThreshDeg`, `kTraConvergeThreshCm`).
-- **VNCLio**: extends IEKF with VNC rotation constraints — extracts scan plane normals in body frame, matches to map normals, adds `VNCPair` residuals that constrain rotation around planar regions.
+- **VNCLio**: extends IEKF with VNC rotation constraints — extracts scan plane normals in body frame, matches to map normals via 27-neighbor `matchVoxelMap` search with normal consistency filtering (dot > 0.7), adds 3D vector residuals `r = S * n_scan_world` (rank-2 per pair) that constrain rotation in planar regions.
 - **LocalBA** (`MultiRecut` + `MultiMarginalize`): sliding-window bundle adjustment using `LidarFactor` (point-to-plane) and `NormalFactor` (normal consistency). Window size set by `LocalBA.win_size` in config.
 
 ### Namespace Transition

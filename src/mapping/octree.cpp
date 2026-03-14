@@ -585,29 +585,6 @@ bool OctoTree::fitScanPlane(const Eigen::Vector3d& sensor_pos) {
   return has_plane;
 }
 
-OctoTree* OctoTree::findFinePlane(Eigen::Vector3d& wld) {
-  if (!inside(wld)) {
-    return nullptr;
-  }
-
-  if (octo_state == 1) {
-    for (int i = 0; i < 8; i++) {
-      if (leaves[i] != nullptr && leaves[i]->inside(wld)) {
-        OctoTree* finer = leaves[i]->findFinePlane(wld);
-        if (finer != nullptr) {
-          return finer;
-        }
-      }
-    }
-  }
-
-  if (plane.is_plane) {
-    return this;
-  }
-
-  return nullptr;
-}
-
 void OctoTree::trasDisplay(int win_count, pcl::PointCloud<core::PointType>& pl_fixd,
                            pcl::PointCloud<core::PointType>& pl_wind, std::vector<core::IMUST>& x_buf) {
   if (octo_state == 0) {
