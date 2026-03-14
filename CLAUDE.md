@@ -42,7 +42,7 @@ src/
 1. `platform/ros2/subscribers` receives Livox CustomMsg + IMU → buffers in `imu_buf` / `pcl_buf`
 2. `VINASlam::RunOdometryLocalMapping` (runs in its own thread) calls `sync_packages` to pair LiDAR+IMU
 3. `estimation/ImuEkf` propagates state and corrects motion blur on the point cloud
-4. `LioStateEstimation` / `VNCLio` runs IEKF with point-to-plane constraints against `surf_map`
+4. `LioStateEstimation` runs IEKF with point-to-plane constraints against `surf_map`; when VNC is enabled (`VNCLio`), also adds 3D normal consistency residuals for rotation
 5. `MultiRecut` rebuilds the octree planes; `MultiMarginalize` marginalizes old states
 6. `platform/ros2/publishers` (ResultPublisher singleton) publishes TF, path, map topics
 
