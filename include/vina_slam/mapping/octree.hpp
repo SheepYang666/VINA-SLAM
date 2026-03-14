@@ -219,8 +219,10 @@ public:
             Eigen::Matrix3d& var_wld, double& sigma_d, OctoTree*& oc);
 
   /**
-   * @brief Transfer child pointers for release
-   * @param octos_release Vector to collect nodes for release
+   * @brief Collect descendant nodes for release
+   * @param octos_release Vector to collect child/grandchild nodes
+   *
+   * The caller remains responsible for deleting the current node.
    */
   void trasPtr(std::vector<OctoTree*>& octos_release);
 

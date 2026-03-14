@@ -233,9 +233,9 @@ void OctoTree::trasPtr(std::vector<OctoTree*>& octos_release) {
   for (int i = 0; i < 8; i++) {
     if (leaves[i] != nullptr) {
       leaves[i]->trasPtr(octos_release);
+      octos_release.push_back(leaves[i]);
     }
   }
-  octos_release.push_back(this);
 }
 
 void OctoTree::clearSlwd(std::vector<SlideWindow*>& sws) {

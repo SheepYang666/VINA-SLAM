@@ -21,9 +21,9 @@ namespace mapping {
  * @param feat_map Output voxel hash map
  * @param pvec Input points with variance
  * @param win_count Current frame index in window
- * @param feat_tem_map Temporary voxel map (for optimization)
+ * @param feat_tem_map Temporary voxel subset updated by this call
  * @param wdsize Sliding window size
- * @param pwld Output world points
+ * @param pwld Input world-frame points matching pvec
  * @param sws Sliding window pool
  */
 void cutVoxel(std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_map,
@@ -36,9 +36,9 @@ void cutVoxel(std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_map,
  * @param feat_map Output voxel hash map
  * @param pvec Input points with variance
  * @param win_count Current frame index in window
- * @param feat_tem_map Temporary voxel map
+ * @param feat_tem_map Temporary voxel subset updated by this call
  * @param wdsize Sliding window size
- * @param pwld Output world points
+ * @param pwld Input world-frame points matching pvec
  * @param sws Multi-threaded sliding window pools
  */
 void cutVoxelMulti(std::unordered_map<core::VOXEL_LOC, OctoTree*>& feat_map,
