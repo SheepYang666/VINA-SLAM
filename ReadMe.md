@@ -5,7 +5,7 @@ Environments with sparse or repetitive geometric structures, such as long corrid
 To address these limitations, we propose a novel LiDAR-IMU SLAM framework, \textbf{VINA-SLAM}, which establishes a unified 3D global voxel map and collects global structure cues into the voxel map.
 To be specific, VINA-SLAM first continuously tracks surface normals stored in the global voxel map using a normal-guided correspondence strategy.
 
-Then, a tangent-space metric is further proposed to explicitly supplement rotational constraints around planar regions into a local bundle adjustment module, providing robust initial pose estimates even in geometrically degenerate regions.
+Then, a tangent-space metric is further proposed to explicitly supplement rotational constraints around planar regions into a local bundle adjustment module, providing robust initial pose estimates even in geometrically degenerate regions. Specifically, the VNC (Vector Normal Consistency) module computes a 3D vector residual `r = S * n_scan_world` where `S = I - n_map * n_map^T` projects onto the map normal's tangent plane, yielding a rank-2 constraint per normal pair that constrains two rotation DOFs. Map plane matching uses a 27-neighbor voxel search with normal consistency filtering (rejecting pairs with angular deviation > 45 degrees) to prevent cross-structure mismatches.
 
 Finally, we formulate a sliding-window bundle adjustment module that tightly couples IMU factors, normal consistency factors, and planar constraints. A key component is the use of the minimum eigenvalue of each voxel's covariance, as a statistically principled planar factor that improves the Hessian condition number and enhances cross-view geometric consistency.
 
