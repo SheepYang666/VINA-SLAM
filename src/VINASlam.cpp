@@ -251,7 +251,6 @@ struct ScanPlaneInfo
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   Eigen::Vector3d center_body;       ///< Plane center in body frame
   Eigen::Vector3d normal_body;       ///< Plane normal in body frame (unit vector)
-  Eigen::Matrix3d skew_normal_body;  ///< Skew-symmetric [normal_body]x (cached)
   double quality;                    ///< Plane quality in (0,1], higher = flatter
   double sigma_n;                    ///< Normal estimation uncertainty
 };
@@ -276,7 +275,6 @@ void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
         ScanPlaneInfo sp;
         sp.center_body = ot->plane.center;
         sp.normal_body = ot->plane.normal.normalized();
-        sp.skew_normal_body = hat(sp.normal_body);
         sp.quality = quality;
         sp.sigma_n = std::sqrt(lambda_min / lambda_sum);
         planes.push_back(sp);
@@ -350,7 +348,6 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
   // VNC pre-processing: extract scan planes in body frame (only if enabled)
   // ======================================================================
   const double VNC_ALPHA = 0.1;
-  const double VNC_EPSILON = 1e-6;
 
   unordered_map<VOXEL_LOC, OctoTree*> scan_voxels;
   std::vector<ScanPlaneInfo> scan_planes;
@@ -454,93 +451,59 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
       for (int sp_idx = 0; sp_idx < num_scan_planes; sp_idx++)
       {
         const ScanPlaneInfo& sp = scan_planes[sp_idx];
+
+        // 1. Transform scan plane to world frame using current IEKF estimate
         Eigen::Vector3d center_world = x_curr.R * sp.center_body + x_curr.p;
-        if (!center_world.allFinite())
+        Eigen::Vector3d n_scan_world = (x_curr.R * sp.normal_body).normalized();
+        if (!center_world.allFinite() || !n_scan_world.allFinite())
         {
-          markNumericFailure("vnc_center_world", "iter=" + std::to_string(iterCount) +
-                                                     ", scan_plane=" + std::to_string(sp_idx) + ", center_body=[" +
-                                                     matrixToString(sp.center_body.transpose()) + "], x_curr.p=[" +
-                                                     matrixToString(x_curr.p.transpose()) + "], center_world=[" +
-                                                     matrixToString(center_world.transpose()) + "]");
+          markNumericFailure("vnc_projection", "iter=" + std::to_string(iterCount) +
+                                                   ", sp=" + std::to_string(sp_idx));
           break;
         }
 
-        float loc[3];
-        for (int j = 0; j < 3; j++)
-        {
-          loc[j] = center_world[j] / voxel_size;
-          if (loc[j] < 0)
-            loc[j] -= 1;
-        }
-        VOXEL_LOC position(static_cast<int64_t>(loc[0]), static_cast<int64_t>(loc[1]), static_cast<int64_t>(loc[2]));
+        // 2. Find nearest map plane via 27-neighbor search (replaces single-voxel findFinePlane)
+        Plane* map_plane = nullptr;
+        double sigma_d = 0;
+        OctoTree* oc_temp = nullptr;
+        Eigen::Matrix3d var_dummy = Eigen::Matrix3d::Identity() * 0.01;
+        int found = matchVoxelMap(surf_map, center_world, map_plane, var_dummy, sigma_d, oc_temp);
+        if (!found || map_plane == nullptr) continue;
 
-        auto iter = surf_map.find(position);
-        if (iter == surf_map.end())
-          continue;
+        Eigen::Vector3d n_map = map_plane->normal.normalized();
+        if (!n_map.allFinite() || n_map.squaredNorm() < 1e-12) continue;
 
-        OctoTree* map_ot = iter->second->find_fine_plane(center_world);
-        if (map_ot == nullptr || !map_ot->plane.is_plane)
-          continue;
-        if (!map_ot->plane.normal.allFinite() || map_ot->plane.normal.squaredNorm() < 1e-12)
-        {
-          markNumericFailure("vnc_map_plane", "iter=" + std::to_string(iterCount) +
-                                                  ", scan_plane=" + std::to_string(sp_idx) + ", voxel=[" +
-                                                  std::to_string(position.x) + " " + std::to_string(position.y) + " " +
-                                                  std::to_string(position.z) + "], plane_normal=[" +
-                                                  matrixToString(map_ot->plane.normal.transpose()) + "]");
-          break;
-        }
+        // 3. Normal consistency check: reject if angle > 45 degrees
+        double dot = std::abs(n_scan_world.dot(n_map));
+        if (dot < 0.7) continue;
 
-        Eigen::Vector3d n_map = map_ot->plane.normal.normalized();
-        Eigen::Vector3d n_scan_world = x_curr.R * sp.normal_body;
-        if (!n_map.allFinite() || !n_scan_world.allFinite())
-        {
-          markNumericFailure("vnc_normal_projection",
-                             "iter=" + std::to_string(iterCount) + ", scan_plane=" + std::to_string(sp_idx) +
-                                 ", n_map=[" + matrixToString(n_map.transpose()) + "], n_scan_world=[" +
-                                 matrixToString(n_scan_world.transpose()) + "], normal_body=[" +
-                                 matrixToString(sp.normal_body.transpose()) + "]");
-          break;
-        }
-
+        // 4-5-6. 3D VNC residual, Jacobian, and normal equation accumulation
+        //
+        // Residual derivation:
+        //   n_scan_world = R * n_body  (scan normal in world frame)
+        //   For a perfect match: n_scan_world ∥ n_map, i.e. n_scan_world × n_map = 0
+        //   Equivalently: the component of n_scan_world perpendicular to n_map should be zero.
+        //   Projection matrix S = I - n_map * n_map^T projects onto n_map's null space.
+        //   Residual: r = S * n_scan_world  (3×1, zero when normals are parallel)
+        //
+        // Jacobian w.r.t. rotation error δθ (SO3 left perturbation):
+        //   n_scan_world(δθ) = Exp(δθ) * R * n_body ≈ (I + [δθ]×) * R * n_body
+        //                    = n_scan_world + [δθ]× * n_scan_world
+        //                    = n_scan_world - [n_scan_world]× * δθ
+        //   ∂r/∂δθ = -S * [n_scan_world]×
+        //   ∂r/∂δp = 0  (normals are translation-invariant)
+        //
         Eigen::Matrix3d S = Eigen::Matrix3d::Identity() - n_map * n_map.transpose();
-        Eigen::Vector3d r_vec = S * n_scan_world;
-        if (!r_vec.allFinite())
-        {
-          markNumericFailure("vnc_residual_vector",
-                             "iter=" + std::to_string(iterCount) + ", scan_plane=" + std::to_string(sp_idx) + ", S=\n" +
-                                 matrixToString(S) + ", r_vec=[" + matrixToString(r_vec.transpose()) + "]");
-          break;
-        }
-        double r_n = r_vec.norm();
-        if (r_n < VNC_EPSILON)
-          continue;
+        Eigen::Vector3d r = S * n_scan_world;
 
-        Eigen::Vector3d t = r_vec / r_n;
-        if (!t.allFinite())
-        {
-          markNumericFailure("vnc_residual_direction", "iter=" + std::to_string(iterCount) + ", scan_plane=" +
-                                                           std::to_string(sp_idx) + ", r_n=" + std::to_string(r_n) +
-                                                           ", r_vec=[" + matrixToString(r_vec.transpose()) + "]");
-          break;
-        }
+        Eigen::Matrix<double, 3, 6> J;
+        J.block<3, 3>(0, 0) = -S * hat(n_scan_world);
+        J.block<3, 3>(0, 3).setZero();
 
-        Eigen::Matrix<double, 6, 1> jac_n;
-        jac_n.head(3) = (t.transpose() * x_curr.R * sp.skew_normal_body).transpose();
-        jac_n.tail(3) = Eigen::Vector3d::Zero();
+        double w = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
 
-        double w_n = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
-        if (!jac_n.allFinite() || !std::isfinite(w_n))
-        {
-          markNumericFailure("vnc_jacobian_weight",
-                             "iter=" + std::to_string(iterCount) + ", scan_plane=" + std::to_string(sp_idx) +
-                                 ", quality=" + std::to_string(sp.quality) + ", sigma_n=" + std::to_string(sp.sigma_n) +
-                                 ", jac_n=[" + matrixToString(jac_n.transpose()) + "], w_n=" + std::to_string(w_n));
-          break;
-        }
-
-        HTH += w_n * jac_n * jac_n.transpose();
-        HTz -= w_n * jac_n * r_n;
+        HTH += w * J.transpose() * J;
+        HTz -= w * J.transpose() * r;
       }
     }
 

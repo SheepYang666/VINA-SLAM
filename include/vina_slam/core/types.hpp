@@ -259,39 +259,6 @@ struct Plane {
 };
 
 // ============================================================================
-// VNC (Vector Normal Consistency) Pair
-// ============================================================================
-/**
- * @brief VNC matching pair for rotation constraint
- *
- * Stores the relationship between a scan plane normal and a map plane normal
- * for VNC residual computation in IEKF.
- */
-struct VNCPair {
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
-  Eigen::Vector3d n_scan;      ///< Scan plane normal (body frame)
-  Eigen::Vector3d n_map;       ///< Map plane normal (world frame)
-  Eigen::Vector3d p_scan;      ///< Scan point position (body frame)
-  double sigma_n;              ///< Normal estimation uncertainty
-  double weight;               ///< Precomputed weight
-
-  // Cached values for efficiency
-  Eigen::Matrix3d skew_n_scan; ///< Skew-symmetric matrix [n_scan]×
-
-  /**
-   * @brief Default constructor
-   */
-  VNCPair()
-    : n_scan(Eigen::Vector3d::Zero())
-    , n_map(Eigen::Vector3d::Zero())
-    , p_scan(Eigen::Vector3d::Zero())
-    , sigma_n(0.1)
-    , weight(1.0)
-    , skew_n_scan(Eigen::Matrix3d::Zero()) {}
-};
-
-// ============================================================================
 // Voxel Location Hash
 // ============================================================================
 /**
@@ -340,4 +307,3 @@ using vina_slam::core::PVecPtr;
 using vina_slam::core::PointCluster;
 using vina_slam::core::Plane;
 using vina_slam::core::VOXEL_LOC;
-using vina_slam::core::VNCPair;
