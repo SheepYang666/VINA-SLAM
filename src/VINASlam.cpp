@@ -486,18 +486,18 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         //   Projection matrix S = I - n_map * n_map^T projects onto n_map's null space.
         //   Residual: r = S * n_scan_world  (3×1, zero when normals are parallel)
         //
-        // Jacobian w.r.t. rotation error δθ (SO3 left perturbation):
-        //   n_scan_world(δθ) = Exp(δθ) * R * n_body ≈ (I + [δθ]×) * R * n_body
-        //                    = n_scan_world + [δθ]× * n_scan_world
-        //                    = n_scan_world - [n_scan_world]× * δθ
-        //   ∂r/∂δθ = -S * [n_scan_world]×
+        // Jacobian w.r.t. rotation error δθ (SO3 right perturbation, consistent with IMUST::operator+=):
+        //   n_scan_world(δθ) = R * Exp(δθ) * n_body ≈ R * (I + [δθ]×) * n_body
+        //                    = n_scan_world + R * ([δθ]× * n_body)
+        //                    = n_scan_world - R * [n_body]× * δθ
+        //   ∂r/∂δθ = -S * R * [n_body]×
         //   ∂r/∂δp = 0  (normals are translation-invariant)
         //
         Eigen::Matrix3d S = Eigen::Matrix3d::Identity() - n_map * n_map.transpose();
         Eigen::Vector3d r = S * n_scan_world;
 
         Eigen::Matrix<double, 3, 6> J;
-        J.block<3, 3>(0, 0) = -S * hat(n_scan_world);
+        J.block<3, 3>(0, 0) = -S * x_curr.R * hat(sp.normal_body);
         J.block<3, 3>(0, 3).setZero();
 
         double w = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
