@@ -272,12 +272,17 @@ void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
 
       if (quality > 0.5)
       {
-        ScanPlaneInfo sp;
-        sp.center_body = ot->plane.center;
-        sp.normal_body = ot->plane.normal.normalized();
-        sp.quality = quality;
-        sp.sigma_n = std::sqrt(lambda_min / lambda_sum);
-        planes.push_back(sp);
+        Eigen::Vector3d normal = ot->plane.normal;
+        double norm = normal.norm();
+        if (norm >= 1e-12)
+        {
+          ScanPlaneInfo sp;
+          sp.center_body = ot->plane.center;
+          sp.normal_body = normal / norm;
+          sp.quality = quality;
+          sp.sigma_n = std::sqrt(std::max(0.0, lambda_min / lambda_sum));  // clamp for eigensolver float noise
+          planes.push_back(sp);
+        }
       }
     }
   }
@@ -448,6 +453,8 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
     // -- VNC normal consistency residuals (only if enabled) --
     if (use_vnc)
     {
+      static const Eigen::Matrix3d var_dummy = Eigen::Matrix3d::Identity() * 0.01;
+
       for (int sp_idx = 0; sp_idx < num_scan_planes; sp_idx++)
       {
         const ScanPlaneInfo& sp = scan_planes[sp_idx];
@@ -466,8 +473,8 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         Plane* map_plane = nullptr;
         double sigma_d = 0;
         OctoTree* oc_temp = nullptr;
-        Eigen::Matrix3d var_dummy = Eigen::Matrix3d::Identity() * 0.01;
-        int found = matchVoxelMap(surf_map, center_world, map_plane, var_dummy, sigma_d, oc_temp);
+        Eigen::Matrix3d var_tmp = var_dummy;
+        int found = matchVoxelMap(surf_map, center_world, map_plane, var_tmp, sigma_d, oc_temp);
         if (!found || map_plane == nullptr) continue;
 
         Eigen::Vector3d n_map = map_plane->normal.normalized();
@@ -501,6 +508,7 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         J.block<3, 3>(0, 3).setZero();
 
         double w = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
+        if (!std::isfinite(w)) continue;
 
         HTH += w * J.transpose() * J;
         HTz -= w * J.transpose() * r;
