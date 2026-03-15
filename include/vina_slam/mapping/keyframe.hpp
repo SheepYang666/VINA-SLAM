@@ -42,34 +42,27 @@ struct Keyframe {
    * @brief Constructor with initial pose
    * @param _x0 Initial pose
    */
-  explicit Keyframe(core::IMUST& _x0) : x0(_x0) {
-    plptr = pcl::PointCloud<core::PointType>::Ptr(new pcl::PointCloud<core::PointType>);
+  explicit Keyframe(core::IMUST& _x0) : x0(_x0), exist(0) {
+    plptr.reset(new pcl::PointCloud<core::PointType>());
   }
 
   /**
    * @brief Generate point cloud for publishing
-   * @param pl_send Output point cloud
+   * @param pl_send Output point cloud (points are appended)
    * @param rot Additional rotation (default identity)
    * @param tra Additional translation (default zero)
    */
   void generate(pcl::PointCloud<core::PointType>& pl_send,
                 Eigen::Matrix3d rot = Eigen::Matrix3d::Identity(),
                 Eigen::Vector3d tra = Eigen::Vector3d(0, 0, 0)) {
-    pl_send.clear();
-    pl_send.reserve(plptr->size());
-
-    Eigen::Matrix3d R_total = rot * x0.R;
-    Eigen::Vector3d t_total = rot * x0.p + tra;
-
-    for (const auto& pt : plptr->points) {
-      core::PointType pt_new;
-      Eigen::Vector3d p(pt.x, pt.y, pt.z);
-      p = R_total * p + t_total;
-      pt_new.x = p.x();
-      pt_new.y = p.y();
-      pt_new.z = p.z();
-      pt_new.intensity = pt.intensity;
-      pl_send.push_back(pt_new);
+    Eigen::Vector3d v3;
+    for (core::PointType ap : plptr->points) {
+      v3 << ap.x, ap.y, ap.z;
+      v3 = rot * v3 + tra;
+      ap.x = v3[0];
+      ap.y = v3[1];
+      ap.z = v3[2];
+      pl_send.push_back(ap);
     }
   }
 };

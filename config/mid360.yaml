@@ -22,7 +22,7 @@ vina_slam:
       bagname: "sim"
       lidar_type: 0 #0 mid360  5 sim
 
-      blind: 1.0
+      blind: 2.0
       point_filter_num: 1
 
       # Mid360

@@ -56,9 +56,9 @@ void ImuEkf::motionBlur(core::IMUST& xc, pcl::PointCloud<core::PointType>& pcl_i
   imus.push_front(last_imu);
 
   if (last_pcl_end_time - pcl_beg_time > 0.01) {
-    printf("%lf %lf\n", pcl_beg_time, last_pcl_end_time);
-    printf("LiDAR time regress. Please check data\n");
-    exit(0);
+    printf("WARNING: LiDAR time regress (beg=%.6f, last_end=%.6f). Check data.\n",
+           pcl_beg_time, last_pcl_end_time);
+    // Continue instead of crashing - may cause degraded performance
   }
 
   imu_poses.clear();

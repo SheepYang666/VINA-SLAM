@@ -219,8 +219,10 @@ public:
             Eigen::Matrix3d& var_wld, double& sigma_d, OctoTree*& oc);
 
   /**
-   * @brief Transfer child pointers for release
-   * @param octos_release Vector to collect nodes for release
+   * @brief Collect descendant nodes for release
+   * @param octos_release Vector to collect child/grandchild nodes
+   *
+   * The caller remains responsible for deleting the current node.
    */
   void trasPtr(std::vector<OctoTree*>& octos_release);
 
@@ -238,6 +240,13 @@ public:
    */
   void trasDisplay(int win_count, pcl::PointCloud<core::PointType>& pl_fixd,
                    pcl::PointCloud<core::PointType>& pl_wind, std::vector<core::IMUST>& x_buf);
+
+  /**
+   * @brief Fit plane to scan points using SVD with octree subdivision
+   * @param sensor_pos Sensor position for normal orientation
+   * @return true if a valid plane was found
+   */
+  bool fitScanPlane(const Eigen::Vector3d& sensor_pos);
 
   /**
    * @brief Check if point is inside this voxel
@@ -281,6 +290,7 @@ public:
   void allocate_fix(core::pointVar& pv) { allocateFix(pv); }
   void fix_divide(std::vector<SlideWindow*>& sws) { fixDivide(sws); }
   void plane_update() { planeUpdate(); }
+  bool fit_scan_plane(const Eigen::Vector3d& sensor_pos) { return fitScanPlane(sensor_pos); }
   void tras_opt(LidarFactor& vox_opt) { trasOpt(vox_opt); }
   void tras_opt(NormalFactor& vox_opt) { trasOpt(vox_opt); }
   void tras_ptr(std::vector<OctoTree*>& octos_release) { trasPtr(octos_release); }

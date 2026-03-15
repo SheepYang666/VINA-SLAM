@@ -6,6 +6,8 @@
 #include "vina_slam/mapping/octree.hpp"
 #include "vina_slam/core/math.hpp"
 #include <Eigen/Eigenvalues>
+#include <Eigen/Geometry>
+#include <geometry_msgs/msg/point.hpp>
 
 namespace vina_slam {
 namespace mapping {
@@ -21,18 +23,18 @@ std::vector<double> plane_eigen_value_thre;
 std::vector<int> mp;
 
 void bfVar(const core::pointVar& pv, Eigen::Matrix<double, 9, 9>& bcov, const Eigen::Vector3d& vec) {
-  bcov.setZero();
-
-  // Covariance contribution from point variance
-  Eigen::Matrix3d pvar = pv.var;
-
-  // Second moment contribution
-  bcov.block<3, 3>(0, 0) = pvar;
-  bcov.block<3, 3>(6, 6) = pvar;
-
-  // Cross terms
-  bcov.block<3, 3>(0, 6) = vec * pvar.col(0).transpose();
-  bcov.block<3, 3>(6, 0) = pvar.col(0) * vec.transpose();
+  Eigen::Matrix<double, 6, 3> Bi;
+  Bi << 2 * vec(0), 0, 0,
+        vec(1), vec(0), 0,
+        vec(2), 0, vec(0),
+        0, 2 * vec(1), 0,
+        0, vec(2), vec(1),
+        0, 0, 2 * vec(2);
+  Eigen::Matrix<double, 6, 3> Biup = Bi * pv.var;
+  bcov.block<6, 6>(0, 0) = Biup * Bi.transpose();
+  bcov.block<6, 3>(0, 6) = Biup;
+  bcov.block<3, 6>(6, 0) = Biup.transpose();
+  bcov.block<3, 3>(6, 6) = pv.var;
 }
 
 OctoTree::OctoTree(int _l, int _w) : layer(_l), octo_state(0), wdsize(_w) {
@@ -231,9 +233,9 @@ void OctoTree::trasPtr(std::vector<OctoTree*>& octos_release) {
   for (int i = 0; i < 8; i++) {
     if (leaves[i] != nullptr) {
       leaves[i]->trasPtr(octos_release);
+      octos_release.push_back(leaves[i]);
     }
   }
-  octos_release.push_back(this);
 }
 
 void OctoTree::clearSlwd(std::vector<SlideWindow*>& sws) {
@@ -356,8 +358,10 @@ void OctoTree::margi(int win_count, int mgsize, std::vector<core::IMUST>& x_buf,
     std::vector<core::PointCluster> pcrs_world(wdsize);
 
     if (opt_state >= int(vox_opt.pcr_adds.size())) {
-      printf("Error: opt_state: %d %zu\n", opt_state, vox_opt.pcr_adds.size());
-      exit(0);
+      printf("Error: opt_state out of range: %d >= %zu\n", opt_state, vox_opt.pcr_adds.size());
+      opt_state = -1;
+      mVox.unlock();
+      return;
     }
 
     if (opt_state >= 0) {
@@ -470,6 +474,321 @@ void OctoTree::trasOpt(NormalFactor& vox_opt) {
       if (leaves[i] != nullptr)
         leaves[i]->trasOpt(vox_opt);
   }
+}
+
+// ============================================================================
+// Visualization helpers (anonymous namespace)
+// ============================================================================
+namespace {
+
+[[maybe_unused]] static int voxel_id_from_center(const double center[3], int layer) {
+  const int64_t ix = llround(center[0] * 1000.0);
+  const int64_t iy = llround(center[1] * 1000.0);
+  const int64_t iz = llround(center[2] * 1000.0);
+  int64_t h = ix * 73856093LL ^ iy * 19349663LL ^ iz * 83492791LL ^ (int64_t(layer) * 2654435761LL);
+  if (h < 0) h = -h;
+  return static_cast<int>(h & 0x7fffffff);
+}
+
+void map_jet(double v, double vmin, double vmax, uint8_t& r, uint8_t& g, uint8_t& b) {
+  if (v < vmin) v = vmin;
+  if (v > vmax) v = vmax;
+
+  double dr = 1.0, dg = 1.0, db = 1.0;
+  if (v < 0.1242) {
+    db = 0.504 + ((1.0 - 0.504) / 0.1242) * v;
+    dg = dr = 0.0;
+  } else if (v < 0.3747) {
+    db = 1.0; dr = 0.0;
+    dg = (v - 0.1242) * (1.0 / (0.3747 - 0.1242));
+  } else if (v < 0.6253) {
+    db = (0.6253 - v) * (1.0 / (0.6253 - 0.3747));
+    dg = 1.0;
+    dr = (v - 0.3747) * (1.0 / (0.6253 - 0.3747));
+  } else if (v < 0.8758) {
+    db = 0.0; dr = 1.0;
+    dg = (0.8758 - v) * (1.0 / (0.8758 - 0.6253));
+  } else {
+    db = 0.0; dg = 0.0;
+    dr = 1.0 - (v - 0.8758) * ((1.0 - 0.504) / (1.0 - 0.8758));
+  }
+
+  r = static_cast<uint8_t>(255 * dr);
+  g = static_cast<uint8_t>(255 * dg);
+  b = static_cast<uint8_t>(255 * db);
+}
+
+} // anonymous namespace
+
+// ============================================================================
+// Additional OctoTree methods ported from legacy voxel_map.cpp
+// ============================================================================
+
+bool OctoTree::fitScanPlane(const Eigen::Vector3d& sensor_pos) {
+  plane.is_plane = false;
+  isexist = (pcr_add.N != 0);
+
+  if (octo_state == 1) {
+    bool has_plane = false;
+    for (int i = 0; i < 8; i++) {
+      if (leaves[i] != nullptr) {
+        has_plane = leaves[i]->fitScanPlane(sensor_pos) || has_plane;
+      }
+    }
+    isexist = has_plane;
+    return has_plane;
+  }
+
+  if (pcr_add.N < 3) {
+    return false;
+  }
+
+  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(pcr_add.cov());
+  eig_value = saes.eigenvalues();
+  eig_vector = saes.eigenvectors();
+  plane.is_plane = planeJudge(eig_value);
+
+  if (plane.is_plane) {
+    plane.center = pcr_add.v / pcr_add.N;
+    plane.normal = eig_vector.col(0);
+    plane.radius = eig_value[2];
+
+    if (plane.normal.dot(plane.center - sensor_pos) > 0) {
+      plane.normal = -plane.normal;
+    }
+
+    return true;
+  }
+
+  int min_points_subdivide = 3;
+  if (layer >= 0 && layer < static_cast<int>(min_point.size())) {
+    min_points_subdivide = std::max(3, static_cast<int>(min_point[layer]));
+  }
+
+  if (layer >= max_layer || pcr_add.N < min_points_subdivide || point_fix.empty()) {
+    return false;
+  }
+
+  octo_state = 1;
+  std::vector<SlideWindow*> scan_sws;
+  fixDivide(scan_sws);
+  core::PVec().swap(point_fix);
+
+  bool has_plane = false;
+  for (int i = 0; i < 8; i++) {
+    if (leaves[i] != nullptr) {
+      has_plane = leaves[i]->fitScanPlane(sensor_pos) || has_plane;
+    }
+  }
+
+  isexist = has_plane;
+  return has_plane;
+}
+
+void OctoTree::trasDisplay(int win_count, pcl::PointCloud<core::PointType>& pl_fixd,
+                           pcl::PointCloud<core::PointType>& pl_wind, std::vector<core::IMUST>& x_buf) {
+  if (octo_state == 0) {
+    if (sw == nullptr) return;
+    const int sw_size = static_cast<int>(sw->points.size());
+    if (sw_size == 0) return;
+    const int cnt = std::min(win_count, sw_size);
+    (void)pcr_add;
+    (void)pl_fixd;
+
+    core::PointType ap;
+
+    if (plane.is_plane) {
+      for (int i = 0; i < cnt; i++) {
+        const int idx = mp[i];
+        if (idx < 0 || idx >= sw_size) continue;
+        if (i >= static_cast<int>(x_buf.size())) break;
+        for (core::pointVar& pv : sw->points[idx]) {
+          Eigen::Vector3d pvec = x_buf[i].R * pv.pnt + x_buf[i].p;
+          ap.x = pvec[0];
+          ap.y = pvec[1];
+          ap.z = pvec[2];
+          pl_wind.push_back(ap);
+        }
+      }
+    }
+  } else {
+    for (int i = 0; i < 8; i++)
+      if (leaves[i] != nullptr)
+        leaves[i]->trasDisplay(win_count, pl_fixd, pl_wind, x_buf);
+  }
+}
+
+void OctoTree::collectPlaneMarkers(visualization_msgs::msg::MarkerArray& out, int max_layer_param,
+                                   std::unordered_set<int>& used_ids, float alpha,
+                                   double max_trace, double pow_num) {
+  if (layer > max_layer_param) return;
+
+  if (octo_state == 0) {
+    if (!plane.is_plane && plane.is_published) {
+      const int id = voxel_id_from_center(voxel_center, layer);
+      if (used_ids.insert(id).second) {
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "camera_init";
+        marker.ns = "plane";
+        marker.id = id;
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        out.markers.push_back(marker);
+      }
+      plane.is_published = false;
+      plane.is_update = false;
+    }
+
+    if (plane.is_plane && plane.is_update) {
+      const int id = voxel_id_from_center(voxel_center, layer);
+      if (!used_ids.insert(id).second) return;
+      const Eigen::Vector3d cov_diag = plane.plane_var.block<3, 3>(0, 0).diagonal();
+      double trace = cov_diag.sum();
+      if (trace >= max_trace) trace = max_trace;
+      trace = trace * (1.0 / max_trace);
+      trace = std::pow(trace, pow_num);
+
+      uint8_t r = 255, g = 255, b = 255;
+      map_jet(trace, 0.0, 1.0, r, g, b);
+
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = "camera_init";
+      marker.ns = "plane";
+      marker.id = id;
+      marker.type = visualization_msgs::msg::Marker::CYLINDER;
+      marker.action = visualization_msgs::msg::Marker::ADD;
+      marker.pose.position.x = plane.center[0];
+      marker.pose.position.y = plane.center[1];
+      marker.pose.position.z = plane.center[2];
+
+      const Eigen::Vector3d n = plane.normal.normalized();
+      const Eigen::Quaterniond q = Eigen::Quaterniond::FromTwoVectors(Eigen::Vector3d::UnitZ(), n);
+      marker.pose.orientation.x = q.x();
+      marker.pose.orientation.y = q.y();
+      marker.pose.orientation.z = q.z();
+      marker.pose.orientation.w = q.w();
+
+      const double ev0 = std::max(0.0, eig_value[0]);
+      const double ev1 = std::max(0.0, eig_value[1]);
+      const double ev2 = std::max(0.0, eig_value[2]);
+      marker.scale.x = 3.0 * std::sqrt(ev2);
+      marker.scale.y = 3.0 * std::sqrt(ev1);
+      marker.scale.z = 2.0 * std::sqrt(ev0);
+
+      marker.color.a = alpha;
+      marker.color.r = r / 255.0f;
+      marker.color.g = g / 255.0f;
+      marker.color.b = b / 255.0f;
+
+      out.markers.push_back(marker);
+      plane.is_update = false;
+      plane.is_published = true;
+    }
+    return;
+  } else if (plane.is_published) {
+    const int id = voxel_id_from_center(voxel_center, layer);
+    if (used_ids.insert(id).second) {
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = "camera_init";
+      marker.ns = "plane";
+      marker.id = id;
+      marker.action = visualization_msgs::msg::Marker::DELETE;
+      out.markers.push_back(marker);
+    }
+    plane.is_published = false;
+    plane.is_update = false;
+  }
+
+  for (int i = 0; i < 8; ++i)
+    if (leaves[i] != nullptr)
+      leaves[i]->collectPlaneMarkers(out, max_layer_param, used_ids, alpha, max_trace, pow_num);
+}
+
+void OctoTree::collectNormalMarkers(visualization_msgs::msg::MarkerArray& out, int max_layer_param,
+                                    std::unordered_set<int>& used_ids, float alpha,
+                                    double max_trace, double pow_num) {
+  if (layer > max_layer_param) return;
+
+  if (octo_state == 0) {
+    if (!plane.is_plane && plane.is_normal_published) {
+      const int id = voxel_id_from_center(voxel_center, layer);
+      if (used_ids.insert(id).second) {
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "camera_init";
+        marker.ns = "normal";
+        marker.id = id;
+        marker.action = visualization_msgs::msg::Marker::DELETE;
+        out.markers.push_back(marker);
+      }
+      plane.is_normal_published = false;
+      plane.is_normal_update = false;
+    }
+
+    if (plane.is_plane && plane.is_normal_update) {
+      const int id = voxel_id_from_center(voxel_center, layer);
+      if (!used_ids.insert(id).second) return;
+
+      const Eigen::Vector3d cov_diag = plane.plane_var.block<3, 3>(0, 0).diagonal();
+      double trace = cov_diag.sum();
+      if (trace >= max_trace) trace = max_trace;
+      trace = trace * (1.0 / max_trace);
+      trace = std::pow(trace, pow_num);
+
+      uint8_t r = 255, g = 255, b = 255;
+      map_jet(trace, 0.0, 1.0, r, g, b);
+
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = "camera_init";
+      marker.ns = "normal";
+      marker.id = id;
+      marker.type = visualization_msgs::msg::Marker::ARROW;
+      marker.action = visualization_msgs::msg::Marker::ADD;
+
+      const double length = 2.0 * quater_length;
+      geometry_msgs::msg::Point p0;
+      p0.x = plane.center[0];
+      p0.y = plane.center[1];
+      p0.z = plane.center[2];
+
+      const Eigen::Vector3d n = plane.normal.normalized();
+      geometry_msgs::msg::Point p1;
+      p1.x = plane.center[0] + n[0] * length;
+      p1.y = plane.center[1] + n[1] * length;
+      p1.z = plane.center[2] + n[2] * length;
+
+      marker.points.push_back(p0);
+      marker.points.push_back(p1);
+
+      marker.scale.x = 0.1 * length;
+      marker.scale.y = 0.2 * length;
+      marker.scale.z = 0.0;
+
+      marker.color.a = alpha;
+      marker.color.r = r / 255.0f;
+      marker.color.g = g / 255.0f;
+      marker.color.b = b / 255.0f;
+
+      out.markers.push_back(marker);
+      plane.is_normal_update = false;
+      plane.is_normal_published = true;
+    }
+    return;
+  } else if (plane.is_normal_published) {
+    const int id = voxel_id_from_center(voxel_center, layer);
+    if (used_ids.insert(id).second) {
+      visualization_msgs::msg::Marker marker;
+      marker.header.frame_id = "camera_init";
+      marker.ns = "normal";
+      marker.id = id;
+      marker.action = visualization_msgs::msg::Marker::DELETE;
+      out.markers.push_back(marker);
+    }
+    plane.is_normal_published = false;
+    plane.is_normal_update = false;
+  }
+
+  for (int i = 0; i < 8; ++i)
+    if (leaves[i] != nullptr)
+      leaves[i]->collectNormalMarkers(out, max_layer_param, used_ids, alpha, max_trace, pow_num);
 }
 
 } // namespace mapping

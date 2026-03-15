@@ -1,26 +1,4 @@
-# ===== ROS / colcon =====
 build/
-install/
-log/
-
-# ===== IDE =====
-.vscode/
+compile_commands.json
 .cache/
-.clangd/
-.compile_commands.json
-
-# ===== OS =====
-.DS_Store
-Thumbs.db
-
-# ===== C++ =====
-*.o
-*.so
-*.a
-*.out
-
-# ===== Bags / Data =====
-*.bag
-*.bag.active
-*.pcd
-*.ply
+.vscode/
