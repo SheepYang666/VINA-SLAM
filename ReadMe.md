@@ -9,10 +9,9 @@ Then, a tangent-space metric is further proposed to explicitly supplement rotati
 
 Finally, we formulate a sliding-window bundle adjustment module that tightly couples IMU factors, normal consistency factors, and planar constraints. A key component is the use of the minimum eigenvalue of each voxel's covariance, as a statistically principled planar factor that improves the Hessian condition number and enhances cross-view geometric consistency.
 
+![](./docs/pics/Fig1.png)
 
-<img width="2330" height="1257" alt="2026-01-24_14-21" src="https://github.com/user-attachments/assets/568dde16-0b20-4e5e-8117-209ae2bdef01" />
-
-<img width="2158" height="1197" alt="2026-01-24_14-23" src="https://github.com/user-attachments/assets/29b904eb-cd79-43a2-afdb-df285c5ec137" />
+![](./docs/pics/Fig2.png)
 
 ## Running
 
@@ -48,3 +47,29 @@ When the system is reset, VINA-SLAM now publishes an empty message on `/curr_pat
 cleared before a new trajectory starts.
 
 `/map_path` was a legacy topic name and is no longer used by the current launch + RViz configuration.
+
+>
+> ```
+> 
+>   ```
+
+### 📖 Citation
+
+If you use VINA-SLAM for any academic work, please cite our original [paper](https://www.mdpi.com/1424-8220/26/6/1810)
+
+```
+@article{zhang2026vina,
+title={VINA-SLAM: A Voxel-Based Inertial and Normal-Aligned LiDAR--IMU SLAM},
+author={Zhang, Ruyang and Sun, Bingyu},
+journal={Sensors},
+volume={26},
+number={6},
+pages={1810},
+year={2026},
+publisher={MDPI}
+}
+```
+
+### Acknowledgements 
+
+- Thanks for [Voxel-SLAM](https://github.com/hku-mars/Voxel-SLAM).
