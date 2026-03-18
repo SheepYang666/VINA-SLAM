@@ -48,11 +48,6 @@ cleared before a new trajectory starts.
 
 `/map_path` was a legacy topic name and is no longer used by the current launch + RViz configuration.
 
->
-> ```
-> 
->   ```
-
 ### 📖 Citation
 
 If you use VINA-SLAM for any academic work, please cite our original [paper](https://www.mdpi.com/1424-8220/26/6/1810)
@@ -70,6 +65,6 @@ publisher={MDPI}
 }
 ```
 
-### Acknowledgements 
+### Acknowledgements
 
 - Thanks for [Voxel-SLAM](https://github.com/hku-mars/Voxel-SLAM).
