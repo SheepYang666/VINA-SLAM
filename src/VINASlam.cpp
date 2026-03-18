@@ -249,10 +249,10 @@ std::string matrixToString(const Eigen::MatrixBase<Derived>& value)
 struct ScanPlaneInfo
 {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  Eigen::Vector3d center_body;       ///< Plane center in body frame
-  Eigen::Vector3d normal_body;       ///< Plane normal in body frame (unit vector)
-  double quality;                    ///< Plane quality in (0,1], higher = flatter
-  double sigma_n;                    ///< Normal estimation uncertainty
+  Eigen::Vector3d center_body;  ///< Plane center in body frame
+  Eigen::Vector3d normal_body;  ///< Plane normal in body frame (unit vector)
+  double quality;               ///< Plane quality in (0,1], higher = flatter
+  double sigma_n;               ///< Normal estimation uncertainty
 };
 
 void collectScanPlanes(OctoTree* ot, std::vector<ScanPlaneInfo>& planes)
@@ -464,8 +464,7 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         Eigen::Vector3d n_scan_world = (x_curr.R * sp.normal_body).normalized();
         if (!center_world.allFinite() || !n_scan_world.allFinite())
         {
-          markNumericFailure("vnc_projection", "iter=" + std::to_string(iterCount) +
-                                                   ", sp=" + std::to_string(sp_idx));
+          markNumericFailure("vnc_projection", "iter=" + std::to_string(iterCount) + ", sp=" + std::to_string(sp_idx));
           break;
         }
 
@@ -475,14 +474,17 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         OctoTree* oc_temp = nullptr;
         Eigen::Matrix3d var_tmp = var_dummy;
         int found = matchVoxelMap(surf_map, center_world, map_plane, var_tmp, sigma_d, oc_temp);
-        if (!found || map_plane == nullptr) continue;
+        if (!found || map_plane == nullptr)
+          continue;
 
         Eigen::Vector3d n_map = map_plane->normal.normalized();
-        if (!n_map.allFinite() || n_map.squaredNorm() < 1e-12) continue;
+        if (!n_map.allFinite() || n_map.squaredNorm() < 1e-12)
+          continue;
 
         // 3. Normal consistency check: reject if angle > 45 degrees
         double dot = std::abs(n_scan_world.dot(n_map));
-        if (dot < 0.7) continue;
+        if (dot < 0.7)
+          continue;
 
         // 4-5-6. 3D VNC residual, Jacobian, and normal equation accumulation
         //
@@ -508,7 +510,8 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         J.block<3, 3>(0, 3).setZero();
 
         double w = VNC_ALPHA * sp.quality / (sp.sigma_n * sp.sigma_n + 0.01);
-        if (!std::isfinite(w)) continue;
+        if (!std::isfinite(w))
+          continue;
 
         HTH += w * J.transpose() * J;
         HTz -= w * J.transpose() * r;

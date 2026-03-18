@@ -8,7 +8,8 @@ def generate_launch_description() -> LaunchDescription:
         os.path.dirname(__file__),
         '..',
         'config',
-        'mid360.yaml'
+        # 'mid360.yaml'
+        'velodyne.yaml'
     )
     
     slam_node = Node(

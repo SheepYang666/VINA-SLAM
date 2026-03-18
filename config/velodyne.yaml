@@ -1,25 +1,32 @@
 vina_slam:
   ros__parameters:
     finish: false
-    # ---------- General ----------
+    # ---------- General main ----------
     General:
+      # Mid360
       lid_topic: "/velodyne_points"
       imu_topic: "/imu/data"
 
-      # lid_topic: "/rslidar_points"
+      # sim
+      # lid_topic: "/points"
       # imu_topic: "/imu"
+
       # The file path of the map to be saved
       save_path: "/home/zry/Code/VINA_SLAM/data/M2UD/Mixed/"
+
       # The offline map in the save_path to be loaded
       # The number after the map name is the threshold for loop
       # '#' means the map is not loaded
+      # previous_map: "#kx_changfang: 0.5"
       previous_map: ""
       bagname: "mixed_03"
-      lidar_type: 1
-      blind: 1.5
+      lidar_type: 1 #0 mid360  5 sim
+
+      blind: 2.0
       point_filter_num: 1
 
-      # M2UD
+      # Mid360
+      # M2UD 6-wheeled
       extrinsic_tran: [0.76802, -0.11605, 0.2772]
       extrinsic_rota:
         [
@@ -34,8 +41,24 @@ vina_slam:
           0.999954463,
         ]
 
+      # extrinsic_tran: [-0.01907, 0.0045, 0.05714]
+      # extrinsic_rota:
+      #   [
+      #     0.999256713,
+      #     0.032388537,
+      #     -0.020904626,
+      #     -0.032332863,
+      #     0.999472666,
+      #     0.002995836,
+      #     0.020990633,
+      #     -0.002317703,
+      #     0.999776986,
+      #   ]
+
       # The session is saved in save_path + bagname
       is_save_map: 0
+      if_BA: 1
+      if_loop_dect: 0
 
     # ---------- Odometry ----------
     Odometry:
@@ -44,24 +67,24 @@ vina_slam:
       rdw_gyr: 0.0001
       rdw_acc: 0.0001
       down_size: 0.1
-      dept_err: 0.01
-      beam_err: 0.01
+      dept_err: 0.02
+      beam_err: 0.05
       voxel_size: 1.0
       min_eigen_value: 0.0025
-      degrade_bound: 100
+      degrade_bound: 10
       point_notime: 0
 
     # ---------- LocalBA ----------
     LocalBA:
       win_size: 10
-      max_layer: 2
+      max_layer: 3
       cov_gyr: 0.01
-      cov_acc: 1.0
+      cov_acc: 2.0
       rdw_gyr: 0.0001
       rdw_acc: 0.0001
       min_ba_point: 1
-      plane_eigen_value_thre: [1.0, 1.0, 1.0, 1.0]
-      imu_coef: 0.0001
+      plane_eigen_value_thre: [4.0, 4.0, 4.0, 4.0]
+      imu_coef: 0.0002
       thread_num: 5
 
     # ---------- Loop ----------
@@ -71,13 +94,13 @@ vina_slam:
       ratio_drift: 0.01
       curr_halt: 10
       prev_halt: 10
-      acsize: 10
-      mgsize: 5
+      acsize: 2
+      mgsize: 2
       isHighFly: 0
 
     # ---------- GBA ----------
     GBA:
       voxel_size: 1.0
       min_eigen_value: 0.01
-      eigen_value_array: [2.0, 2.0, 2.0, 2.0]
-      total_max_iter: 200
+      eigen_value_array: [4.0, 4.0, 4.0, 4.0]
+      total_max_iter: 6
