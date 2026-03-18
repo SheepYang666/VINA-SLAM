@@ -56,6 +56,7 @@ extern rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_vo
 extern rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_voxel_normal;
 extern rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
 extern rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr sub_pcl;
+extern rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc2;
 
 // Utility function for publishing point clouds
 template <typename CloudT>

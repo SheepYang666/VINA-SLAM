@@ -7,45 +7,51 @@
 #include "vina_slam/core/constants.hpp"
 
 #include <pcl_conversions/pcl_conversions.h>
+#include <sensor_msgs/msg/detail/point_cloud2__struct.hpp>
 
-namespace vina_slam {
-namespace core {
+namespace vina_slam
+{
+namespace core
+{
 
-SensorContext& SensorContext::Instance() {
-    static SensorContext instance;
-    return instance;
+SensorContext& SensorContext::Instance()
+{
+  static SensorContext instance;
+  return instance;
 }
 
-void SensorContext::Initialize(const rclcpp::Node::SharedPtr& node) {
-    if (initialized_) {
-        return;
-    }
-    node_ = node;
+void SensorContext::Initialize(const rclcpp::Node::SharedPtr& node)
+{
+  if (initialized_)
+  {
+    return;
+  }
+  node_ = node;
 
-    // Initialize publishers
-    rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
-    auto qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos_profile));
+  // Initialize publishers
+  rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data;
+  auto qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos_profile));
 
-    pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>("/scan", qos);
-    pub_cmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_map", qos);
-    pub_init = node->create_publisher<sensor_msgs::msg::PointCloud2>("/init_map", qos);
-    pub_pmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/prev_map", qos);
-    pub_test = node->create_publisher<sensor_msgs::msg::PointCloud2>("/test_map", qos);
-    pub_prev_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/prev_path", qos);
-    pub_curr_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/curr_path", qos);
-    pub_pmap_livox = node->create_publisher<livox_ros_driver2::msg::CustomMsg>("/pmap_livox", qos);
-    pub_voxel_plane = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_plane", qos);
-    pub_voxel_normal = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_normal", qos);
+  pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>("/scan", qos);
+  pub_cmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_map", qos);
+  pub_init = node->create_publisher<sensor_msgs::msg::PointCloud2>("/init_map", qos);
+  pub_pmap = node->create_publisher<sensor_msgs::msg::PointCloud2>("/prev_map", qos);
+  pub_test = node->create_publisher<sensor_msgs::msg::PointCloud2>("/test_map", qos);
+  pub_prev_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/prev_path", qos);
+  pub_curr_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/curr_path", qos);
+  pub_pmap_livox = node->create_publisher<livox_ros_driver2::msg::CustomMsg>("/pmap_livox", qos);
+  pub_voxel_plane = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_plane", qos);
+  pub_voxel_normal = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_normal", qos);
 
-    // Load point cloud decoder parameters
-    feat.blind = node->declare_parameter("General.blind", 0.1);
-    feat.point_filter_num = node->declare_parameter("General.point_filter_num", 1);
+  // Load point cloud decoder parameters
+  feat.blind = node->declare_parameter("General.blind", 0.1);
+  feat.point_filter_num = node->declare_parameter("General.point_filter_num", 1);
 
-    // Load error parameters
-    dept_err = node->declare_parameter("Odometry.dept_err", 0.02);
-    beam_err = node->declare_parameter("Odometry.beam_err", 0.05);
+  // Load error parameters
+  dept_err = node->declare_parameter("Odometry.dept_err", 0.02);
+  beam_err = node->declare_parameter("Odometry.beam_err", 0.05);
 
-    initialized_ = true;
+  initialized_ = true;
 }
 
 }  // namespace core
@@ -70,6 +76,7 @@ rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_voxel_pla
 rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_voxel_normal;
 rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu;
 rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr sub_pcl;
+rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc2;
 std::mutex mBuf;
 LidarPointCloudDecoder feat;
 std::deque<std::shared_ptr<sensor_msgs::msg::Imu>> imu_buf;

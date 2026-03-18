@@ -1,0 +1,83 @@
+vina_slam:
+  ros__parameters:
+    finish: false
+    # ---------- General ----------
+    General:
+      lid_topic: "/velodyne_points"
+      imu_topic: "/imu/data"
+
+      # lid_topic: "/rslidar_points"
+      # imu_topic: "/imu"
+      # The file path of the map to be saved
+      save_path: "/home/zry/Code/VINA_SLAM/data/M2UD/Mixed/"
+      # The offline map in the save_path to be loaded
+      # The number after the map name is the threshold for loop
+      # '#' means the map is not loaded
+      previous_map: ""
+      bagname: "mixed_03"
+      lidar_type: 1
+      blind: 1.5
+      point_filter_num: 1
+
+      # M2UD
+      extrinsic_tran: [0.76802, -0.11605, 0.2772]
+      extrinsic_rota:
+        [
+          0.999977863,
+          -0.001054061,
+          -0.006569848,
+          0.001099534,
+          0.999975440,
+          0.006921682,
+          0.006562391,
+          -0.006928752,
+          0.999954463,
+        ]
+
+      # The session is saved in save_path + bagname
+      is_save_map: 0
+
+    # ---------- Odometry ----------
+    Odometry:
+      cov_gyr: 0.01
+      cov_acc: 1.0
+      rdw_gyr: 0.0001
+      rdw_acc: 0.0001
+      down_size: 0.1
+      dept_err: 0.01
+      beam_err: 0.01
+      voxel_size: 1.0
+      min_eigen_value: 0.0025
+      degrade_bound: 100
+      point_notime: 0
+
+    # ---------- LocalBA ----------
+    LocalBA:
+      win_size: 10
+      max_layer: 2
+      cov_gyr: 0.01
+      cov_acc: 1.0
+      rdw_gyr: 0.0001
+      rdw_acc: 0.0001
+      min_ba_point: 1
+      plane_eigen_value_thre: [1.0, 1.0, 1.0, 1.0]
+      imu_coef: 0.0001
+      thread_num: 5
+
+    # ---------- Loop ----------
+    Loop:
+      jud_default: 0.5
+      icp_eigval: 10.0
+      ratio_drift: 0.01
+      curr_halt: 10
+      prev_halt: 10
+      acsize: 10
+      mgsize: 5
+      isHighFly: 0
+
+    # ---------- GBA ----------
+    GBA:
+      voxel_size: 1.0
+      min_eigen_value: 0.01
+      eigen_value_array: [2.0, 2.0, 2.0, 2.0]
+      total_max_iter: 200

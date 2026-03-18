@@ -109,8 +109,8 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   }
   else
   {
-    // sub_pcl = node->create_subscription<sensor_msgs::msg::PointCloud2>(
-    //     lid_topic, pcl_qos, [](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { pcl_handler(msg); });
+    sub_pcl_pc2 = node->create_subscription<sensor_msgs::msg::PointCloud2>(
+        lid_topic, pcl_qos, [](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { pcl_handler(msg); });
   }
   odom_ekf.imu_topic = imu_topic;
 
