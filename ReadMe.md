@@ -67,4 +67,5 @@ publisher={MDPI}
 
 ### Acknowledgements
 
+- Thanks for [VoxelMap](https://github.com/hku-mars/VoxelMap).
 - Thanks for [Voxel-SLAM](https://github.com/hku-mars/Voxel-SLAM).
