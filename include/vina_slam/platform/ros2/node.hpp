@@ -54,6 +54,9 @@ public:
   int is_save_map;
   int if_BA;
   int enable_visualization = 0;
+  int is_save_pose = 0;
+  std::string pose_save_path;
+  std::string pose_filename;
 
   static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
 

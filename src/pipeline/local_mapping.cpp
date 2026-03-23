@@ -3,6 +3,7 @@
 
 #include "vina_slam/platform/ros2/node.hpp"
 #include "vina_slam/platform/ros2/publishers.hpp"
+#include "vina_slam/platform/ros2/io.hpp"
 #include "vina_slam/pipeline/initialization.hpp"
 #include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/mapping/optimizers.hpp"
@@ -278,6 +279,14 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
   Eigen::MatrixXd hess;
   static IMUST x_last;
 
+  if (is_save_pose == 1)
+  {
+    std::string dir = pose_save_path.empty() ? (savepath + bagname + "/") : pose_save_path;
+    if (!dir.empty() && dir.back() != '/')
+      dir += '/';
+    FileReaderWriter::instance().init_pose_file(dir + pose_filename);
+  }
+
   while (rclcpp::ok())
   {
     node->get_parameter("finish", is_finish);
@@ -312,7 +321,7 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
         for (auto iter = surf_map.begin(); iter != surf_map.end();)
         {
           int dis = jour - iter->second->jour;
-          if (dis < 20)
+          if (dis < 700)
           {
             iter++;
           }
@@ -400,7 +409,8 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr no_ds_pptr(new PVec);
       var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      if (lio_state_estimation(pptr))
+      // if (lio_state_estimation(pptr))
+      if (VNC_lio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {
@@ -415,6 +425,9 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       pwld.clear();
       pvec_update(pptr, x_curr, pwld);
       ResultOutput::instance().pub_localtraj(pwld, jour, x_curr, 0, pcl_path);
+
+      if (is_save_pose == 1)
+        FileReaderWriter::instance().save_pose_tum(x_curr);
 
       t1 = node->now().seconds();
 

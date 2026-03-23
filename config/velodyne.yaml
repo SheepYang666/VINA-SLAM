@@ -11,22 +11,50 @@ vina_slam:
       # LiDAR type: 0=Livox Mid360, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation
       lidar_type: 1
       # Blind zone radius (m), points within this range are ignored
-      blind: 2.0
+      blind: 0.0
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
-      # LiDAR-to-IMU extrinsic: translation [x, y, z] (m) - M2UD 6-wheeled
-      extrinsic_tran: [0.76802, -0.11605, 0.2772]
+      # # LiDAR-to-IMU extrinsic: translation [x, y, z] (m) - M2UD 6-wheeled
+      # extrinsic_tran: [0.76802, -0.11605, 0.2772]
+      # # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
+      # extrinsic_rota:
+      #   [
+      #     0.999977863,
+      #     -0.001054061,
+      #     -0.006569848,
+      #     0.001099534,
+      #     0.999975440,
+      #     0.006921682,
+      #     0.006562391,
+      #     -0.006928752,
+      #     0.999954463,
+      #   ]
+
+      # LiDAR-to-IMU extrinsic: translation [x, y, z] (m) - M2UD 4-wheeled
+      extrinsic_tran: [-0.01907, 0.0045, 0.05714]
       # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
       extrinsic_rota:
         [
-          0.999977863, -0.001054061, -0.006569848,
-          0.001099534,  0.999975440,  0.006921682,
-          0.006562391, -0.006928752,  0.999954463,
+          0.999256713,
+          0.032388537,
+          -0.020904626,
+          -0.032332863,
+          0.999472666,
+          0.002995836,
+          0.020990633,
+          -0.002317703,
+          0.999776986,
         ]
 
       # Save map: 0=disabled, 1=save to save_path/bagname
       is_save_map: 0
+      # Save pose trajectory in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
+      is_save_pose: 1
+      # Directory to save pose trajectory file; defaults to save_path/bagname/ if empty
+      pose_save_path: "/home/zry/data_sets/M2UD/parking"
+      # Pose trajectory filename
+      pose_filename: "VNCLio_trajectory_parking_01.txt"
       # Enable local BA: 0=EKF only, 1=sliding-window BA
       if_BA: 1
       # Voxel downsample size (m) when saving the global map

@@ -84,6 +84,15 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   is_save_map = node->declare_parameter<int>("General.is_save_map", false);
   node->get_parameter("General.is_save_map", is_save_map);
 
+  is_save_pose = node->declare_parameter<int>("General.is_save_pose", 0);
+  node->get_parameter("General.is_save_pose", is_save_pose);
+
+  pose_save_path = node->declare_parameter<std::string>("General.pose_save_path", "");
+  node->get_parameter("General.pose_save_path", pose_save_path);
+
+  pose_filename = node->declare_parameter<std::string>("General.pose_filename", "trajectory.txt");
+  node->get_parameter("General.pose_filename", pose_filename);
+
   if_BA = node->declare_parameter<int>("General.if_BA", false);
   node->get_parameter("General.if_BA", if_BA);
 
@@ -116,6 +125,19 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   else
   {
     std::cout << RED << "[if_BA]: ERROR STATE " << RESET << std::endl;
+  }
+
+  if (is_save_pose == 0)
+  {
+    std::cout << YELLOW << "[is_save_pose]: don't save pose" << RESET << std::endl;
+  }
+  else if (is_save_pose == 1)
+  {
+    std::cout << GREEN << "[is_save_pose]: save pose trajectory" << RESET << std::endl;
+  }
+  else
+  {
+    std::cout << RED << "[is_save_pose]: ERROR STATE " << RESET << std::endl;
   }
 
   // ######################################## print log ########################################
