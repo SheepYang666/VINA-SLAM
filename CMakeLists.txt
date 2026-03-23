@@ -1,33 +1,23 @@
 cmake_minimum_required(VERSION 3.8)
-project(vina_slam LANGUAGES CXX)
+project(vina_slam)
 
+cmake_policy(SET CMP0074 NEW)
+
+# ===============================
+# CMake Configuration
+# ===============================
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# ===============================
-# CMake Policies
-# ===============================
-if(POLICY CMP0144)
-  cmake_policy(SET CMP0144 NEW)
-endif()
-
-if(POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
-
-# ===============================
-# Build Options
-# ===============================
-option(VINA_SLAM_ENABLE_WARNINGS "Enable compiler warnings" ON)
-option(VINA_SLAM_ENABLE_ASAN "Enable AddressSanitizer (Debug only)" OFF)
 
 # ===============================
 # Default Build Type
 # ===============================
-if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
-message(STATUS "\nBuild type: ${CMAKE_BUILD_TYPE}\n")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # ===============================
 # Find Dependencies
@@ -38,79 +28,44 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_eigen REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 find_package(Eigen3 REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
+
+message(STATUS "Eigen version: ${EIGEN_VERSION}")
 
 # ===============================
 # Source Files
 # ===============================
-# Core module sources
-set(CORE_SOURCES
-  src/core/types.cpp
-  src/core/sensor_context.cpp
+set(SOURCES
   src/core/point_utils.cpp
-)
-
-# Sensor module sources
-set(SENSOR_SOURCES
-  src/sensor/lidar_decoder.cpp
-)
-
-# Estimation module sources
-set(ESTIMATION_SOURCES
-  src/estimation/imu_ekf.cpp
   src/estimation/imu_preintegration.cpp
-  src/estimation/state_estimator.cpp
-  src/estimation/sliding_window_manager.cpp
-)
-
-# Mapping module sources
-set(MAPPING_SOURCES
+  src/estimation/imu_ekf.cpp
+  src/sensor/lidar_pointcloud_decoder.cpp
+  src/sensor/sync.cpp
+  src/sensor/lidar_decoder.cpp
   src/mapping/factors.cpp
   src/mapping/optimizers.cpp
   src/mapping/octree.cpp
   src/mapping/voxel_map.cpp
-  src/mapping/voxel_map_manager.cpp
-)
-
-# Pipeline module sources
-set(PIPELINE_SOURCES
   src/pipeline/initialization.cpp
   src/pipeline/odometry.cpp
   src/pipeline/local_mapping.cpp
-)
-
-# Platform module sources (ROS2)
-set(PLATFORM_SOURCES
-  src/platform/ros2/node.cpp
   src/platform/ros2/publishers.cpp
   src/platform/ros2/subscribers.cpp
   src/platform/ros2/io.cpp
-)
-
-# Main sources
-set(MAIN_SOURCES
-  src/main.cpp
-  src/VINASlam.cpp
-)
-
-set(SOURCES
-  ${CORE_SOURCES}
-  ${SENSOR_SOURCES}
-  ${ESTIMATION_SOURCES}
-  ${MAPPING_SOURCES}
-  ${PIPELINE_SOURCES}
-  ${PLATFORM_SOURCES}
-  ${MAIN_SOURCES}
+  src/platform/ros2/node.cpp
 )
 
 # ===============================
 # Executable Target
 # ===============================
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(${PROJECT_NAME}
+  ${SOURCES}
+)
 
 # ===============================
 # Include Directories
@@ -122,29 +77,27 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   ${PCL_INCLUDE_DIRS}
 )
 
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
-
 # ===============================
 # Compile Options
 # ===============================
-if(VINA_SLAM_ENABLE_WARNINGS)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    -g
+    -O1
+    -fsanitize=address
+    -fno-omit-frame-pointer
+    -w
   )
-endif()
-
-if(VINA_SLAM_ENABLE_ASAN)
+else()
   target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CONFIG:Debug>:-fsanitize=address;-fno-omit-frame-pointer>
-  )
-  target_link_options(${PROJECT_NAME} PRIVATE
-    $<$<CONFIG:Debug>:-fsanitize=address>
+    -O3
+    -ffast-math
+    -w
   )
 endif()
 
 # ===============================
-# Dependencies
+# Target Dependencies
 # ===============================
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
@@ -155,6 +108,8 @@ ament_target_dependencies(${PROJECT_NAME}
   pcl_conversions
   tf2_ros
   livox_ros_driver2
+
+  # livox_ros_driver
 )
 
 # ===============================
@@ -173,7 +128,9 @@ install(TARGETS ${PROJECT_NAME}
 
 install(DIRECTORY include/
   DESTINATION include/${PROJECT_NAME}
-  FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+  FILES_MATCHING
+  PATTERN "*.h"
+  PATTERN "*.hpp"
 )
 
 install(DIRECTORY

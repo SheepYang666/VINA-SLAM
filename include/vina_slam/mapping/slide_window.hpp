@@ -1,109 +1,20 @@
-/**
- * @file slide_window.hpp
- * @brief Sliding window for temporal point storage in voxels
- */
-
 #pragma once
 
 #include "vina_slam/core/types.hpp"
 #include <vector>
 
-namespace vina_slam {
-namespace mapping {
-
-/**
- * @brief Sliding window storing points per frame in a voxel
- *
- * Each voxel maintains a sliding window of points from multiple frames.
- * This enables temporal tracking of points for plane fitting and
- * optimization.
- */
-class SlideWindow {
+// The sliding window in each voxel node
+class SlideWindow
+{
 public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+  std::vector<PVec> points;  /// The set of points for each frame in the sliding window, containing covariance
+                             /// information (PVec = vector<pointVar>)
+  std::vector<PointCluster> pcrs_local;  /// Statistics of point clouds for each frame in the sliding window (center of
+                                         /// mass, covariance, etc.)
 
-  /**
-   * @brief Points for each frame in the sliding window
-   * Each element is a vector of pointVar (point + covariance)
-   */
-  std::vector<core::PVec> points;
+  SlideWindow(int wdsize);
+  void resize(int wdsize);
 
-  /**
-   * @brief Point cluster statistics for each frame
-   * Contains mean, covariance, and count information
-   */
-  std::vector<core::PointCluster> pcrs_local;
-
-  /**
-   * @brief Constructor with window size
-   * @param wdsize Number of frames in the sliding window
-   */
-  explicit SlideWindow(int wdsize) {
-    pcrs_local.resize(wdsize);
-    points.resize(wdsize);
-    for (int i = 0; i < wdsize; i++)
-      points[i].reserve(20);
-  }
-
-  /**
-   * @brief Default constructor
-   */
-  SlideWindow() = default;
-
-  /**
-   * @brief Resize the sliding window (only if size changed)
-   * @param wdsize New window size
-   */
-  void resize(int wdsize) {
-    if (static_cast<int>(points.size()) != wdsize) {
-      points.resize(wdsize);
-      pcrs_local.resize(wdsize);
-    }
-  }
-
-  /**
-   * @brief Clear all points in the window
-   */
-  void clear() {
-    int wdsize = points.size();
-    for (int i = 0; i < wdsize; i++) {
-      points[i].clear();
-      pcrs_local[i].clear();
-    }
-  }
-
-  /**
-   * @brief Get window size
-   * @return Number of frames in window
-   */
-  int size() const { return static_cast<int>(points.size()); }
-
-  /**
-   * @brief Add point to a specific frame
-   * @param frame_idx Frame index in window
-   * @param pv Point with variance
-   */
-  void pushPoint(int frame_idx, const core::pointVar& pv) {
-    if (frame_idx >= 0 && frame_idx < static_cast<int>(points.size())) {
-      points[frame_idx].push_back(pv);
-      pcrs_local[frame_idx].push(pv.pnt);
-    }
-  }
-
-  /**
-   * @brief Get total point count across all frames
-   * @return Total number of points
-   */
-  int totalPoints() const {
-    int total = 0;
-    for (const auto& frame_points : points) {
-      total += static_cast<int>(frame_points.size());
-    }
-    return total;
-  }
+  void clear();
 };
-
-} // namespace mapping
-} // namespace vina_slam
-
-// Backward compatibility alias removed - use voxel_map.hpp for global SlideWindow

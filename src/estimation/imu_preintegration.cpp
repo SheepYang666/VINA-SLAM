@@ -1,289 +1,274 @@
-/**
- * @file imu_preintegration.cpp
- * @brief Implementation of IMU preintegration factor
- */
+#include "vina_slam/preintegration.hpp"
 
-#include "vina_slam/estimation/imu_preintegration.hpp"
-
-namespace vina_slam {
-namespace estimation {
-
-// Global noise parameters
 double imupre_scale_gravity = 1.0;
 Eigen::Matrix<double, 6, 6> noiseMeas = Eigen::Matrix<double, 6, 6>::Zero();
 Eigen::Matrix<double, 6, 6> noiseWalk = Eigen::Matrix<double, 6, 6>::Zero();
 
-ImuPreintegration::ImuPreintegration(const Eigen::Vector3d& bg, const Eigen::Vector3d& ba) {
-  bg_ = bg;
-  ba_ = ba;
+IMU_PRE::IMU_PRE(const Eigen::Vector3d &gyro_noise, const Eigen::Vector3d &accel_bias)
+{
+    bg = gyro_noise;
+    ba = accel_bias;
+    R_delta.setIdentity();
+    p_delta.setZero();
+    v_delta.setZero();
 
-  R_delta_.setIdentity();
-  p_delta_.setZero();
-  v_delta_.setZero();
+    R_bg.setZero();
+    p_bg.setZero();
+    p_ba.setZero();
+    v_bg.setZero();
+    v_ba.setZero();
 
-  R_bg_.setZero();
-  p_bg_.setZero();
-  p_ba_.setZero();
-  v_bg_.setZero();
-  v_ba_.setZero();
+    dtime = 0;
 
-  dtime_ = 0;
+    dbg.setZero();
+    dba.setZero();
+    dbg_buf.setZero();
+    dba_buf.setZero();
 
-  dbg.setZero();
-  dba.setZero();
-  dbg_buf.setZero();
-  dba_buf.setZero();
-
-  cov_.setZero();
+    cov.setZero();
 }
 
-void ImuPreintegration::pushImu(std::deque<sensor_msgs::msg::Imu::SharedPtr>& imu_buffer) {
-  imus_.insert(imus_.end(), imu_buffer.begin(), imu_buffer.end());
-  Eigen::Vector3d cur_gyr, cur_acc;
-  for (auto it_imu = imu_buffer.begin() + 1; it_imu != imu_buffer.end(); it_imu++) {
-    sensor_msgs::msg::Imu& imu_prev = **(it_imu - 1);
-    sensor_msgs::msg::Imu& imu_curr = **it_imu;
+void IMU_PRE::push_imu(deque<sensor_msgs::msg::Imu::SharedPtr> &imu_buffer)
+{
 
-    double dt = rclcpp::Time(imu_curr.header.stamp).seconds() - rclcpp::Time(imu_prev.header.stamp).seconds();
+    _imus.insert(_imus.end(), imu_buffer.begin(), imu_buffer.end());
+    Eigen::Vector3d cur_gyr, cur_acc;
+    for (auto it_imu = imu_buffer.begin() + 1; it_imu != imu_buffer.end(); it_imu++)
+    {
+        sensor_msgs::msg::Imu &imu_prev = **(it_imu - 1);
+        sensor_msgs::msg::Imu &imu_curr = **it_imu;
 
-    cur_gyr << 0.5 * (imu_prev.angular_velocity.x + imu_curr.angular_velocity.x),
-        0.5 * (imu_prev.angular_velocity.y + imu_curr.angular_velocity.y),
-        0.5 * (imu_prev.angular_velocity.z + imu_curr.angular_velocity.z);
-    cur_acc << 0.5 * (imu_prev.linear_acceleration.x + imu_curr.linear_acceleration.x),
-        0.5 * (imu_prev.linear_acceleration.y + imu_curr.linear_acceleration.y),
-        0.5 * (imu_prev.linear_acceleration.z + imu_curr.linear_acceleration.z);
+        double dt = rclcpp::Time(imu_curr.header.stamp).seconds() - rclcpp::Time(imu_prev.header.stamp).seconds();
 
-    cur_gyr = cur_gyr - bg_;
-    cur_acc = cur_acc * imupre_scale_gravity - ba_;
+        cur_gyr << 0.5 * (imu_prev.angular_velocity.x + imu_curr.angular_velocity.x),
+            0.5 * (imu_prev.angular_velocity.y + imu_curr.angular_velocity.y),
+            0.5 * (imu_prev.angular_velocity.z + imu_curr.angular_velocity.z);
+        cur_acc << 0.5 * (imu_prev.linear_acceleration.x + imu_curr.linear_acceleration.x),
+            0.5 * (imu_prev.linear_acceleration.y + imu_curr.linear_acceleration.y),
+            0.5 * (imu_prev.linear_acceleration.z + imu_curr.linear_acceleration.z);
 
-    addImu(cur_gyr, cur_acc, dt);
-  }
+        cur_gyr = cur_gyr - bg;
+        cur_acc = cur_acc * imupre_scale_gravity - ba;
+
+        add_imu(cur_gyr, cur_acc, dt);
+    }
 }
 
-void ImuPreintegration::addImu(Eigen::Vector3d& cur_gyr, Eigen::Vector3d& cur_acc, double dt) {
-  dtime_ += dt;
+void IMU_PRE::add_imu(Eigen::Vector3d &cur_gyr, Eigen::Vector3d &cur_acc, double dt)
+{
+    dtime += dt;
 
-  Eigen::Matrix3d rotation_increment = Exp(cur_gyr, dt);
-  Eigen::Matrix3d right_jacobian = jr(cur_gyr * dt);
+    Eigen::Matrix3d rotation_increment = Exp(cur_gyr, dt);
+    Eigen::Matrix3d right_jacobian(jr(cur_gyr * dt));
 
-  Eigen::Matrix3d rotation_dt = dt * R_delta_;
-  Eigen::Matrix3d rotation_dt2_half = 0.5 * dt * dt * R_delta_;
+    Eigen::Matrix3d rotation_dt = dt * R_delta;
+    Eigen::Matrix3d rotation_dt2_half = 0.5 * dt * dt * R_delta;
 
-  Eigen::Matrix3d acc_skew;
-  acc_skew << SKEW_SYM_MATRX(cur_acc);
+    Eigen::Matrix3d acc_skew;
+    acc_skew << SKEW_SYM_MATRX(cur_acc);
 
-  p_ba_ = p_ba_ + v_ba_ * dt - rotation_dt2_half;
-  p_bg_ = p_bg_ + v_bg_ * dt - rotation_dt2_half * acc_skew * R_bg_;
-  v_ba_ = v_ba_ - rotation_dt;
-  v_bg_ = v_bg_ - rotation_dt * acc_skew * R_bg_;
-  R_bg_ = rotation_increment.transpose() * R_bg_ - right_jacobian * dt;
+    p_ba = p_ba + v_ba * dt - rotation_dt2_half;
+    p_bg = p_bg + v_bg * dt - rotation_dt2_half * acc_skew * R_bg;
+    v_ba = v_ba - rotation_dt;
+    v_bg = v_bg - rotation_dt * acc_skew * R_bg;
+    R_bg = rotation_increment.transpose() * R_bg - right_jacobian * dt;
 
-  Eigen::Matrix<double, 9, 9> jacobian_a = Eigen::Matrix<double, 9, 9>::Identity();
-  Eigen::Matrix<double, 9, 6> jacobian_b = Eigen::Matrix<double, 9, 6>::Zero();
+    Eigen::Matrix<double, 9, 9> jacobian_a = Eigen::Matrix<double, 9, 9>::Identity();
+    Eigen::Matrix<double, 9, 6> jacobian_b = Eigen::Matrix<double, 9, 6>::Zero();
 
-  jacobian_a.block<3, 3>(0, 0) = rotation_increment.transpose();
-  jacobian_a.block<3, 3>(3, 0) = -rotation_dt2_half * acc_skew;
-  jacobian_a.block<3, 3>(3, 6) = core::I33 * dt;
-  jacobian_a.block<3, 3>(6, 0) = -rotation_dt * acc_skew;
+    jacobian_a.block<3, 3>(0, 0) = rotation_increment.transpose();
+    jacobian_a.block<3, 3>(3, 0) = -rotation_dt2_half * acc_skew;
+    jacobian_a.block<3, 3>(3, 6) = I33 * dt;
+    jacobian_a.block<3, 3>(6, 0) = -rotation_dt * acc_skew;
 
-  jacobian_b.block<3, 3>(0, 0) = right_jacobian * dt;
-  jacobian_b.block<3, 3>(3, 3) = rotation_dt2_half;
-  jacobian_b.block<3, 3>(6, 3) = rotation_dt;
+    jacobian_b.block<3, 3>(0, 0) = right_jacobian * dt;
+    jacobian_b.block<3, 3>(3, 3) = rotation_dt2_half;
+    jacobian_b.block<3, 3>(6, 3) = rotation_dt;
 
-  cov_.block<9, 9>(0, 0) = jacobian_a * cov_.block<9, 9>(0, 0) * jacobian_a.transpose() +
-                          jacobian_b * noiseMeas * jacobian_b.transpose();
-  cov_.block<6, 6>(9, 9) += noiseWalk * dt;
+    cov.block<9, 9>(0, 0) =
+        jacobian_a * cov.block<9, 9>(0, 0) * jacobian_a.transpose() + jacobian_b * noiseMeas * jacobian_b.transpose();
+    cov.block<6, 6>(9, 9) += noiseWalk * dt;
 
-  p_delta_ += v_delta_ * dt + rotation_dt2_half * cur_acc;
-  v_delta_ += rotation_dt * cur_acc;
-  R_delta_ = R_delta_ * rotation_increment;
+    p_delta += v_delta * dt + rotation_dt2_half * cur_acc;
+    v_delta += rotation_dt * cur_acc;
+    R_delta = R_delta * rotation_increment;
 }
 
-double ImuPreintegration::evaluate(core::IMUST& st1, core::IMUST& st2,
-                                   Eigen::MatrixXd& jtj, Eigen::VectorXd& gg, bool jac_enable) {
-  Eigen::Matrix<double, DIM, DIM> joca, jocb;
-  Eigen::Matrix<double, DIM, 1> rr;
-  joca.setZero();
-  jocb.setZero();
-  rr.setZero();
+double IMU_PRE::give_evaluate(IMUST &st1, IMUST &st2, Eigen::MatrixXd &jtj, Eigen::VectorXd &gg, bool jac_enable)
+{
+    Eigen::Matrix<double, DIM, DIM> joca, jocb;
+    Eigen::Matrix<double, DIM, 1> rr;
+    joca.setZero();
+    jocb.setZero();
+    rr.setZero();
 
-  Eigen::Matrix3d R_correct = R_delta_ * Exp(R_bg_ * dbg);
-  Eigen::Vector3d t_correct = p_delta_ + p_bg_ * dbg + p_ba_ * dba;
-  Eigen::Vector3d v_correct = v_delta_ + v_bg_ * dbg + v_ba_ * dba;
+    Eigen::Matrix3d R_correct = R_delta * Exp(R_bg * dbg);
+    Eigen::Vector3d t_correct = p_delta + p_bg * dbg + p_ba * dba;
+    Eigen::Vector3d v_correct = v_delta + v_bg * dbg + v_ba * dba;
 
-  Eigen::Matrix3d res_r = R_correct.transpose() * st1.R.transpose() * st2.R;
-  Eigen::Vector3d exp_v = st1.R.transpose() * (st2.v - st1.v - dtime_ * st1.g);
-  Eigen::Vector3d res_v = exp_v - v_correct;
-  Eigen::Vector3d exp_t = st1.R.transpose() * (st2.p - st1.p - st1.v * dtime_ - 0.5 * dtime_ * dtime_ * st1.g);
-  Eigen::Vector3d res_t = exp_t - t_correct;
+    Eigen::Matrix3d res_r = R_correct.transpose() * st1.R.transpose() * st2.R;
+    Eigen::Vector3d exp_v = st1.R.transpose() * (st2.v - st1.v - dtime * st1.g);
+    Eigen::Vector3d res_v = exp_v - v_correct;
+    Eigen::Vector3d exp_t = st1.R.transpose() * (st2.p - st1.p - st1.v * dtime - 0.5 * dtime * dtime * st1.g);
+    Eigen::Vector3d res_t = exp_t - t_correct;
 
-  Eigen::Vector3d res_bg = st2.bg - st1.bg;
-  Eigen::Vector3d res_ba = st2.ba - st1.ba;
+    Eigen::Vector3d res_bg = st2.bg - st1.bg;
+    Eigen::Vector3d res_ba = st2.ba - st1.ba;
 
-  double b_wei = 1;
+    double b_wei = 1;
 
-  rr.block<3, 1>(0, 0) = Log(res_r);
-  rr.block<3, 1>(3, 0) = res_t;
-  rr.block<3, 1>(6, 0) = res_v;
-  rr.block<3, 1>(9, 0) = res_bg * b_wei;
-  rr.block<3, 1>(12, 0) = res_ba * b_wei;
+    rr.block<3, 1>(0, 0) = Log(res_r);
+    rr.block<3, 1>(3, 0) = res_t;
+    rr.block<3, 1>(6, 0) = res_v;
+    rr.block<3, 1>(9, 0) = res_bg * b_wei;
+    rr.block<3, 1>(12, 0) = res_ba * b_wei;
 
-  Eigen::Matrix<double, 15, 15> cov_inv = cov_.inverse();
+    Eigen::Matrix<double, 15, 15> cov_inv = cov.inverse();
 
-  // Check for NaN in covariance inverse (indicates numerical instability)
-  if (!cov_inv.allFinite()) {
-    cov_ = Eigen::Matrix<double, 15, 15>::Identity() * 1e-3;
-    cov_inv = cov_.inverse();
-  }
+    if (jac_enable)
+    {
+        Eigen::Matrix3d JR_inv = jr_inv(res_r);
 
-  if (jac_enable) {
-    Eigen::Matrix3d JR_inv = jr_inv(res_r);
+        joca.block<3, 3>(0, 0) = -JR_inv * st2.R.transpose() * st1.R;
+        jocb.block<3, 3>(0, 0) = JR_inv;
+        joca.block<3, 3>(0, 9) = -JR_inv * res_r.transpose() * jr(R_bg * dbg) * R_bg;
 
-    joca.block<3, 3>(0, 0) = -JR_inv * st2.R.transpose() * st1.R;
-    jocb.block<3, 3>(0, 0) = JR_inv;
-    joca.block<3, 3>(0, 9) = -JR_inv * res_r.transpose() * jr(R_bg_ * dbg) * R_bg_;
+        joca.block<3, 3>(3, 0) = hat(exp_t);
+        joca.block<3, 3>(3, 3) = -st1.R.transpose();
+        joca.block<3, 3>(3, 6) = -st1.R.transpose() * dtime;
+        joca.block<3, 3>(3, 9) = -p_bg;
+        joca.block<3, 3>(3, 12) = -p_ba;
+        jocb.block<3, 3>(3, 3) = st1.R.transpose();
 
-    joca.block<3, 3>(3, 0) = hat(exp_t);
-    joca.block<3, 3>(3, 3) = -st1.R.transpose();
-    joca.block<3, 3>(3, 6) = -st1.R.transpose() * dtime_;
-    joca.block<3, 3>(3, 9) = -p_bg_;
-    joca.block<3, 3>(3, 12) = -p_ba_;
-    jocb.block<3, 3>(3, 3) = st1.R.transpose();
+        joca.block<3, 3>(6, 0) = hat(exp_v);
+        joca.block<3, 3>(6, 6) = -st1.R.transpose();
+        joca.block<3, 3>(6, 9) = -v_bg;
+        joca.block<3, 3>(6, 12) = -v_ba;
+        jocb.block<3, 3>(6, 6) = st1.R.transpose();
 
-    joca.block<3, 3>(6, 0) = hat(exp_v);
-    joca.block<3, 3>(6, 6) = -st1.R.transpose();
-    joca.block<3, 3>(6, 9) = -v_bg_;
-    joca.block<3, 3>(6, 12) = -v_ba_;
-    jocb.block<3, 3>(6, 6) = st1.R.transpose();
+        joca.block<3, 3>(9, 9) = -I33 * b_wei;
+        joca.block<3, 3>(12, 12) = -I33 * b_wei;
+        jocb.block<3, 3>(9, 9) = I33 * b_wei;
+        jocb.block<3, 3>(12, 12) = I33 * b_wei;
 
-    joca.block<3, 3>(9, 9) = -core::I33 * b_wei;
-    joca.block<3, 3>(12, 12) = -core::I33 * b_wei;
-    jocb.block<3, 3>(9, 9) = core::I33 * b_wei;
-    jocb.block<3, 3>(12, 12) = core::I33 * b_wei;
+        Eigen::Matrix<double, DIM, 2 * DIM> joc;
+        joc.block<DIM, DIM>(0, 0) = joca;
+        joc.block<DIM, DIM>(0, DIM) = jocb;
 
-    Eigen::Matrix<double, DIM, 2 * DIM> joc;
-    joc.block<DIM, DIM>(0, 0) = joca;
-    joc.block<DIM, DIM>(0, DIM) = jocb;
+        jtj = joc.transpose() * cov_inv * joc;
+        gg = joc.transpose() * cov_inv * rr;
+    }
 
-    jtj = joc.transpose() * cov_inv * joc;
-    gg = joc.transpose() * cov_inv * rr;
-  }
-
-  return rr.dot(cov_inv * rr);
+    return rr.dot(cov_inv * rr);
 }
 
-double ImuPreintegration::evaluateWithGravity(core::IMUST& st1, core::IMUST& st2,
-                                              Eigen::MatrixXd& jtj, Eigen::VectorXd& gg, bool jac_enable) {
-  Eigen::Matrix<double, DIM, DIM> joca, jocb;
-  Eigen::Matrix<double, DIM, 1> rr;
-  joca.setZero();
-  jocb.setZero();
-  rr.setZero();
-  Eigen::Matrix<double, DIM, 3> jocg;
-  jocg.setZero();
+double IMU_PRE::give_evaluate_g(IMUST &st1, IMUST &st2, Eigen::MatrixXd &jtj, Eigen::VectorXd &gg, bool jac_enable)
+{
+    Eigen::Matrix<double, DIM, DIM> joca, jocb;
+    Eigen::Matrix<double, DIM, 1> rr;
+    joca.setZero();
+    jocb.setZero();
+    rr.setZero();
+    Eigen::Matrix<double, DIM, 3> jocg;
+    jocg.setZero();
 
-  Eigen::Matrix3d R_correct = R_delta_ * Exp(R_bg_ * dbg);
-  Eigen::Vector3d t_correct = p_delta_ + p_bg_ * dbg + p_ba_ * dba;
-  Eigen::Vector3d v_correct = v_delta_ + v_bg_ * dbg + v_ba_ * dba;
+    Eigen::Matrix3d R_correct = R_delta * Exp(R_bg * dbg);
+    Eigen::Vector3d t_correct = p_delta + p_bg * dbg + p_ba * dba;
+    Eigen::Vector3d v_correct = v_delta + v_bg * dbg + v_ba * dba;
 
-  Eigen::Matrix3d res_r = R_correct.transpose() * st1.R.transpose() * st2.R;
-  Eigen::Vector3d exp_v = st1.R.transpose() * (st2.v - st1.v - dtime_ * st1.g);
-  Eigen::Vector3d res_v = exp_v - v_correct;
-  Eigen::Vector3d exp_t = st1.R.transpose() * (st2.p - st1.p - st1.v * dtime_ - 0.5 * dtime_ * dtime_ * st1.g);
-  Eigen::Vector3d res_t = exp_t - t_correct;
+    Eigen::Matrix3d res_r = R_correct.transpose() * st1.R.transpose() * st2.R;
+    Eigen::Vector3d exp_v = st1.R.transpose() * (st2.v - st1.v - dtime * st1.g);
+    Eigen::Vector3d res_v = exp_v - v_correct;
+    Eigen::Vector3d exp_t = st1.R.transpose() * (st2.p - st1.p - st1.v * dtime - 0.5 * dtime * dtime * st1.g);
+    Eigen::Vector3d res_t = exp_t - t_correct;
 
-  Eigen::Vector3d res_bg = st2.bg - st1.bg;
-  Eigen::Vector3d res_ba = st2.ba - st1.ba;
+    Eigen::Vector3d res_bg = st2.bg - st1.bg;
+    Eigen::Vector3d res_ba = st2.ba - st1.ba;
 
-  double b_wei = 1;
+    double b_wei = 1;
 
-  rr.block<3, 1>(0, 0) = Log(res_r);
-  rr.block<3, 1>(3, 0) = res_t;
-  rr.block<3, 1>(6, 0) = res_v;
-  rr.block<3, 1>(9, 0) = res_bg * b_wei;
-  rr.block<3, 1>(12, 0) = res_ba * b_wei;
+    rr.block<3, 1>(0, 0) = Log(res_r);
+    rr.block<3, 1>(3, 0) = res_t;
+    rr.block<3, 1>(6, 0) = res_v;
+    rr.block<3, 1>(9, 0) = res_bg * b_wei;
+    rr.block<3, 1>(12, 0) = res_ba * b_wei;
 
-  Eigen::Matrix<double, 15, 15> cov_inv = cov_.inverse();
+    Eigen::Matrix<double, 15, 15> cov_inv = cov.inverse();
 
-  // Check for NaN in covariance inverse (indicates numerical instability)
-  if (!cov_inv.allFinite()) {
-    cov_ = Eigen::Matrix<double, 15, 15>::Identity() * 1e-3;
-    cov_inv = cov_.inverse();
-  }
+    if (jac_enable)
+    {
+        Eigen::Matrix3d JR_inv = jr_inv(res_r);
+        // joca.block<3, 3>(0, 0) = -JR_inv * st1.R.transpose() * st2.R;
+        joca.block<3, 3>(0, 0) = -JR_inv * st2.R.transpose() * st1.R;
+        jocb.block<3, 3>(0, 0) = JR_inv;
+        joca.block<3, 3>(0, 9) = -JR_inv * res_r.transpose() * jr(R_bg * dbg) * R_bg;
 
-  if (jac_enable) {
-    Eigen::Matrix3d JR_inv = jr_inv(res_r);
+        joca.block<3, 3>(3, 0) = hat(exp_t);
+        joca.block<3, 3>(3, 3) = -st1.R.transpose();
+        joca.block<3, 3>(3, 6) = -st1.R.transpose() * dtime;
+        joca.block<3, 3>(3, 9) = -p_bg;
+        joca.block<3, 3>(3, 12) = -p_ba;
+        jocb.block<3, 3>(3, 3) = st1.R.transpose();
 
-    joca.block<3, 3>(0, 0) = -JR_inv * st2.R.transpose() * st1.R;
-    jocb.block<3, 3>(0, 0) = JR_inv;
-    joca.block<3, 3>(0, 9) = -JR_inv * res_r.transpose() * jr(R_bg_ * dbg) * R_bg_;
+        joca.block<3, 3>(6, 0) = hat(exp_v);
+        joca.block<3, 3>(6, 6) = -st1.R.transpose();
+        joca.block<3, 3>(6, 9) = -v_bg;
+        joca.block<3, 3>(6, 12) = -v_ba;
+        jocb.block<3, 3>(6, 6) = st1.R.transpose();
 
-    joca.block<3, 3>(3, 0) = hat(exp_t);
-    joca.block<3, 3>(3, 3) = -st1.R.transpose();
-    joca.block<3, 3>(3, 6) = -st1.R.transpose() * dtime_;
-    joca.block<3, 3>(3, 9) = -p_bg_;
-    joca.block<3, 3>(3, 12) = -p_ba_;
-    jocb.block<3, 3>(3, 3) = st1.R.transpose();
+        joca.block<3, 3>(9, 9) = -I33 * b_wei;
+        joca.block<3, 3>(12, 12) = -I33 * b_wei;
+        jocb.block<3, 3>(9, 9) = I33 * b_wei;
+        jocb.block<3, 3>(12, 12) = I33 * b_wei;
 
-    joca.block<3, 3>(6, 0) = hat(exp_v);
-    joca.block<3, 3>(6, 6) = -st1.R.transpose();
-    joca.block<3, 3>(6, 9) = -v_bg_;
-    joca.block<3, 3>(6, 12) = -v_ba_;
-    jocb.block<3, 3>(6, 6) = st1.R.transpose();
+        jocg.block<3, 3>(3, 0) = st1.R.transpose() * (-0.5 * dtime * dtime);
+        jocg.block<3, 3>(6, 0) = st1.R.transpose() * (-dtime);
 
-    joca.block<3, 3>(9, 9) = -core::I33 * b_wei;
-    joca.block<3, 3>(12, 12) = -core::I33 * b_wei;
-    jocb.block<3, 3>(9, 9) = core::I33 * b_wei;
-    jocb.block<3, 3>(12, 12) = core::I33 * b_wei;
+        Eigen::Matrix<double, DIM, 2 * DIM + 3> joc;
+        joc.block<DIM, DIM>(0, 0) = joca;
+        joc.block<DIM, DIM>(0, DIM) = jocb;
+        joc.block<DIM, 3>(0, 2 * DIM) = jocg;
 
-    jocg.block<3, 3>(3, 0) = st1.R.transpose() * (-0.5 * dtime_ * dtime_);
-    jocg.block<3, 3>(6, 0) = st1.R.transpose() * (-dtime_);
+        jtj = joc.transpose() * cov_inv * joc;
+        gg = joc.transpose() * cov_inv * rr;
+    }
 
-    Eigen::Matrix<double, DIM, 2 * DIM + 3> joc;
-    joc.block<DIM, DIM>(0, 0) = joca;
-    joc.block<DIM, DIM>(0, DIM) = jocb;
-    joc.block<DIM, 3>(0, 2 * DIM) = jocg;
-
-    jtj = joc.transpose() * cov_inv * joc;
-    gg = joc.transpose() * cov_inv * rr;
-  }
-
-  return rr.dot(cov_inv * rr);
+    return rr.dot(cov_inv * rr);
 }
 
-void ImuPreintegration::updateState(const Eigen::Matrix<double, DIM, 1>& dxi) {
-  dbg_buf = dbg;
-  dba_buf = dba;
+void IMU_PRE::update_state(const Eigen::Matrix<double, DIM, 1> &dxi)
+{
+    dbg_buf = dbg;
+    dba_buf = dba;
 
-  dbg += dxi.block<3, 1>(9, 0);
-  dba += dxi.block<3, 1>(12, 0);
+    dbg += dxi.block<3, 1>(9, 0);
+    dba += dxi.block<3, 1>(12, 0);
 }
 
-void ImuPreintegration::merge(ImuPreintegration& imu2) {
-  p_bg_ += v_bg_ * imu2.dtime_ + R_delta_ * (imu2.p_bg_ - hat(imu2.p_delta_) * R_bg_);
-  p_ba_ += v_ba_ * imu2.dtime_ + R_delta_ * imu2.p_ba_;
-  v_bg_ += R_delta_ * (imu2.v_bg_ - hat(imu2.v_delta_) * R_bg_);
-  v_ba_ += R_delta_ * imu2.v_ba_;
-  R_bg_ = imu2.R_delta_.transpose() * R_bg_ + imu2.R_bg_;
+void IMU_PRE::merge(IMU_PRE &imu2)
+{
 
-  Eigen::Matrix<double, DIM, DIM> Ai, Bi;
-  Ai.setIdentity();
-  Bi.setIdentity();
-  Ai.block<3, 3>(0, 0) = imu2.R_delta_.transpose();
-  Ai.block<3, 3>(3, 0) = -R_delta_ * hat(imu2.p_delta_);
-  Ai.block<3, 3>(3, 6) = core::I33 * imu2.dtime_;
-  Ai.block<3, 3>(6, 0) = -R_delta_ * hat(imu2.v_delta_);
+    p_bg += v_bg * imu2.dtime + R_delta * (imu2.p_bg - hat(imu2.p_delta) * R_bg);
+    p_ba += v_ba * imu2.dtime + R_delta * imu2.p_ba;
+    v_bg += R_delta * (imu2.v_bg - hat(imu2.v_delta) * R_bg);
+    v_ba += R_delta * imu2.v_ba;
+    R_bg = imu2.R_delta.transpose() * R_bg + imu2.R_bg;
 
-  Bi.block<3, 3>(3, 3) = R_delta_;
-  Bi.block<3, 3>(6, 6) = R_delta_;
-  cov_ = Ai * cov_ * Ai.transpose() + Bi * imu2.cov_ * Bi.transpose();
+    Eigen::Matrix<double, DIM, DIM> Ai, Bi;
+    Ai.setIdentity();
+    Bi.setIdentity();
+    Ai.block<3, 3>(0, 0) = imu2.R_delta.transpose();
+    Ai.block<3, 3>(3, 0) = -R_delta * hat(imu2.p_delta);
+    Ai.block<3, 3>(3, 6) = I33 * imu2.dtime;
+    Ai.block<3, 3>(6, 0) = -R_delta * hat(imu2.v_delta);
 
-  p_delta_ += v_delta_ * imu2.dtime_ + R_delta_ * imu2.p_delta_;
-  v_delta_ += R_delta_ * imu2.v_delta_;
-  R_delta_ = R_delta_ * imu2.R_delta_;
+    Bi.block<3, 3>(3, 3) = R_delta;
+    Bi.block<3, 3>(6, 6) = R_delta;
+    cov = Ai * cov * Ai.transpose() + Bi * imu2.cov * Bi.transpose();
 
-  dtime_ += imu2.dtime_;
+    p_delta += v_delta * imu2.dtime + R_delta * imu2.p_delta;
+    v_delta += R_delta * imu2.v_delta;
+    R_delta = R_delta * imu2.R_delta;
+
+    dtime += imu2.dtime;
 }
-
-} // namespace estimation
-} // namespace vina_slam

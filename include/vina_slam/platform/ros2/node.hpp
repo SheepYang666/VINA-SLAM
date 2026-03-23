@@ -1,125 +1,121 @@
-/**
- * @file node.hpp
- * @brief ROS2 node wrapper for VINA-SLAM
- *
- * Handles:
- * - Parameter loading
- * - Node lifecycle management
- * - Configuration management
- */
-
 #pragma once
 
 #include "vina_slam/core/types.hpp"
-#include <rclcpp/rclcpp.hpp>
+#include "vina_slam/ekf_imu.hpp"
+#include "vina_slam/mapping/factors.hpp"
+#include "vina_slam/mapping/octree.hpp"
+#include "vina_slam/mapping/slide_window.hpp"
+#include "vina_slam/preintegration.hpp"
+
+#include <deque>
+#include <fstream>
+#include <pcl/point_cloud.h>
+#include <rclcpp/node.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-namespace vina_slam {
-namespace platform {
-namespace ros2 {
+using namespace std;
 
-/**
- * @brief Configuration parameters for VINA-SLAM
- */
-struct VinaSlamConfig {
-  // General parameters
-  std::string bagname;
-  std::string save_path;
-  std::string lid_topic;
-  std::string imu_topic;
-  int lidar_type = 0;
-  double blind = 0.1;
-  int point_filter_num = 3;
-  int is_save_map = 0;
-  int if_loop_dect = 0;
-  int if_BA = 0;
+// Global variables used by the VINA_SLAM class
+extern double dept_err, beam_err;
 
-  // Extrinsics
-  Eigen::Matrix3d extrinsic_R = Eigen::Matrix3d::Identity();
-  Eigen::Vector3d extrinsic_T = Eigen::Vector3d::Zero();
+inline double get_memory();
 
-  // Odometry parameters
-  double cov_gyr = 0.1;
-  double cov_acc = 0.1;
-  double rand_walk_gyr = 0.1;
-  double rand_walk_acc = 0.1;
-
-  // Mapping parameters
-  double voxel_size = 1.0;
-  int max_layer = 2;
-  int max_points = 100;
-  double plane_threshold = 0.01;
-  int win_size = 20;
-
-  // Localization mode
-  bool localization_mode = false;
-  std::string map_path;
-
-  /**
-   * @brief Print configuration to console
-   */
-  void print() const;
-};
-
-/**
- * @brief ROS2 node wrapper for VINA-SLAM
- *
- * Encapsulates all ROS2-specific functionality including
- * parameter handling, subscriber/publisher management.
- */
-class VinaSlamNode {
-public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
-  /// ROS node pointer
+class VINA_SLAM
+{
+private:
   rclcpp::Node::SharedPtr node;
 
-  /// Configuration
-  VinaSlamConfig config;
+public:
+  pcl::PointCloud<PointType> pcl_path;
+  IMUST x_curr, extrin_para;
+  IMUEKF odom_ekf;
+  unordered_map<VOXEL_LOC, OctoTree*> surf_map, surf_map_slide;
+  double down_size;
+  double full_map_voxel_size;
 
-  /**
-   * @brief Constructor
-   * @param options Node options
-   */
-  explicit VinaSlamNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+  int win_size;
+  vector<IMUST> x_buf;
+  vector<PVecPtr> pvec_buf;
+  deque<IMU_PRE*> imu_pre_buf;
+  int win_count = 0, win_base = 0;
+  vector<vector<SlideWindow*>> sws;
 
-  /**
-   * @brief Get singleton instance
-   * @param node_in ROS node pointer
-   * @return Reference to singleton
-   */
-  static VinaSlamNode& instance(const rclcpp::Node::SharedPtr& node_in);
+  vector<OctoTree*> octos_release;
+  int thread_num = 5;
+  int degrade_bound = 10;
 
-  /**
-   * @brief Get singleton (must be initialized first)
-   * @return Reference to singleton
-   */
-  static VinaSlamNode& instance();
+  bool is_finish = false;
 
-  /**
-   * @brief Load configuration from ROS parameters
-   * @return Loaded configuration
-   */
-  VinaSlamConfig loadConfig();
+  string bagname, savepath, lid_topic, imu_topic;
+  int is_save_map;
+  int if_BA;
+  int enable_visualization = 0;
 
-  /**
-   * @brief Get LiDAR-IMU extrinsics as IMUST
-   * @return Extrinsics state
-   */
-  core::IMUST getExtrinsics() const;
+  static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
 
-  /**
-   * @brief Get ROS node pointer
-   * @return Node pointer
-   */
-  rclcpp::Node::SharedPtr getNode() const { return node; }
+  static VINA_SLAM& instance();
+
+  explicit VINA_SLAM(const rclcpp::Node::SharedPtr& node_in);
+
+  // Odometry methods (implemented in pipeline/odometry.cpp)
+  bool lio_state_estimation(PVecPtr pptr);
+  bool VNC_lio(PVecPtr pptr);
+  bool LioStateEstimation(PVecPtr pptr, bool use_vnc);
+
+  pcl::PointCloud<PointType>::Ptr pl_tree;
+  void lio_state_estimation_kdtree(PVecPtr pptr);
+
+  // Initialization wrapper (implemented in node.cpp)
+  int initialization(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus, Eigen::MatrixXd& hess, LidarFactor& voxhess,
+                     PLV(3) & pwld, pcl::PointCloud<PointType>::Ptr pcl_curr);
+
+  void system_reset(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus);
+
+  // Local mapping methods (implemented in pipeline/local_mapping.cpp)
+  void multi_margi(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, double jour, int win_count, vector<IMUST>& xs,
+                   LidarFactor& voxopt, vector<SlideWindow*>& sw);
+
+  void multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int win_count, vector<IMUST>& xs, LidarFactor& voxopt,
+                   vector<vector<SlideWindow*>>& sws);
+
+  void multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int win_count, vector<IMUST>& xs,
+                   LidarFactor& lidarFactor, NormalFactor& normalFactor, vector<vector<SlideWindow*>>& sws);
+
+  void multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int win_count, vector<IMUST>& xs,
+                   vector<vector<SlideWindow*>>& sws);
+
+  // The main thread of odometry and local mapping (implemented in pipeline/local_mapping.cpp)
+  void thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node);
 };
 
-} // namespace ros2
-} // namespace platform
-} // namespace vina_slam
+// Inline implementation of get_memory
+inline double get_memory()
+{
+  std::ifstream infile("/proc/self/status");
+  double mem = -1;
+  std::string lineStr, str;
+  while (std::getline(infile, lineStr))
+  {
+    std::stringstream ss(lineStr);
+    bool is_find = false;
+    while (ss >> str)
+    {
+      if (str == "VmRSS:")
+      {
+        is_find = true;
+        continue;
+      }
 
-// Backward compatibility
-using vina_slam::platform::ros2::VinaSlamConfig;
-using vina_slam::platform::ros2::VinaSlamNode;
+      if (is_find)
+        mem = std::stod(str);
+      break;
+    }
+    if (is_find)
+      break;
+  }
+  return mem / (1048576);
+}

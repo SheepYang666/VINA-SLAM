@@ -1,106 +1,83 @@
 vina_slam:
   ros__parameters:
     finish: false
-    # ---------- General main ----------
+    # ---------- General ----------
     General:
-      # Mid360
       lid_topic: "/velodyne_points"
       imu_topic: "/imu/data"
 
-      # sim
-      # lid_topic: "/points"
-      # imu_topic: "/imu"
-
-      # The file path of the map to be saved
       save_path: "/home/zry/Code/VINA_SLAM/data/M2UD/Mixed/"
-
-      # The offline map in the save_path to be loaded
-      # The number after the map name is the threshold for loop
-      # '#' means the map is not loaded
-      # previous_map: "#kx_changfang: 0.5"
-      previous_map: ""
       bagname: "mixed_03"
-      lidar_type: 1 #0 mid360  5 sim
-
+      # LiDAR type: 0=Livox Mid360, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation
+      lidar_type: 1
+      # Blind zone radius (m), points within this range are ignored
       blind: 2.0
+      # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
-      # Mid360
-      # M2UD 6-wheeled
+      # LiDAR-to-IMU extrinsic: translation [x, y, z] (m) - M2UD 6-wheeled
       extrinsic_tran: [0.76802, -0.11605, 0.2772]
+      # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
       extrinsic_rota:
         [
-          0.999977863,
-          -0.001054061,
-          -0.006569848,
-          0.001099534,
-          0.999975440,
-          0.006921682,
-          0.006562391,
-          -0.006928752,
-          0.999954463,
+          0.999977863, -0.001054061, -0.006569848,
+          0.001099534,  0.999975440,  0.006921682,
+          0.006562391, -0.006928752,  0.999954463,
         ]
 
-      # extrinsic_tran: [-0.01907, 0.0045, 0.05714]
-      # extrinsic_rota:
-      #   [
-      #     0.999256713,
-      #     0.032388537,
-      #     -0.020904626,
-      #     -0.032332863,
-      #     0.999472666,
-      #     0.002995836,
-      #     0.020990633,
-      #     -0.002317703,
-      #     0.999776986,
-      #   ]
-
-      # The session is saved in save_path + bagname
+      # Save map: 0=disabled, 1=save to save_path/bagname
       is_save_map: 0
+      # Enable local BA: 0=EKF only, 1=sliding-window BA
       if_BA: 1
-      if_loop_dect: 0
+      # Voxel downsample size (m) when saving the global map
+      full_map_voxel_size: 0.1
+      # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
+      enable_visualization: 0
 
     # ---------- Odometry ----------
     Odometry:
+      # Gyroscope measurement noise covariance (EKF process noise)
       cov_gyr: 0.01
+      # Accelerometer measurement noise covariance
       cov_acc: 1.0
+      # Gyroscope bias random-walk noise
       rdw_gyr: 0.0001
+      # Accelerometer bias random-walk noise
       rdw_acc: 0.0001
+      # Point cloud voxel downsample grid size (m); larger = faster but coarser
       down_size: 0.1
+      # LiDAR range error (m), used for radial component of point covariance
       dept_err: 0.02
+      # LiDAR angular error (deg), used for angular component of point covariance
       beam_err: 0.05
+      # Voxel map grid size (m), octree root node edge length
       voxel_size: 1.0
+      # Min eigenvalue threshold for plane detection; smaller = stricter
       min_eigen_value: 0.0025
+      # Degrade count limit; system resets after this many consecutive degraded frames
       degrade_bound: 10
+      # 0=normal (has timestamps, IMU motion compensation), 1=no timestamps (skip deskewing)
       point_notime: 0
 
     # ---------- LocalBA ----------
     LocalBA:
+      # Sliding window size (number of frames)
       win_size: 10
+      # Octree max recursion depth (0=root only)
       max_layer: 3
+      # Gyroscope noise for IMU preintegration in BA
       cov_gyr: 0.01
+      # Accelerometer noise for IMU preintegration in BA
       cov_acc: 2.0
+      # Bias random-walk noise (gyroscope) in BA
       rdw_gyr: 0.0001
+      # Bias random-walk noise (accelerometer) in BA
       rdw_acc: 0.0001
+      # Min points per voxel for BA; voxels below this produce no constraint
       min_ba_point: 1
+      # Per-layer plane eigenvalue ratio threshold (inverted after loading); larger = more lenient
       plane_eigen_value_thre: [4.0, 4.0, 4.0, 4.0]
+      # IMU factor weight in BA optimization; larger = stronger IMU constraint
       imu_coef: 0.0002
+      # Number of threads for BA Hessian computation and voxel processing
       thread_num: 5
-
-    # ---------- Loop ----------
-    Loop:
-      jud_default: 0.5
-      icp_eigval: 10.0
-      ratio_drift: 0.01
-      curr_halt: 10
-      prev_halt: 10
-      acsize: 2
-      mgsize: 2
-      isHighFly: 0
-
-    # ---------- GBA ----------
-    GBA:
-      voxel_size: 1.0
-      min_eigen_value: 0.01
-      eigen_value_array: [4.0, 4.0, 4.0, 4.0]
-      total_max_iter: 6

@@ -7,8 +7,9 @@ Panels:
         - /Global Options1
         - /Status1
         - /current data1
-        - /current data1/global map1
-      Splitter Ratio: 0.5
+        - /current data1/global map1/Topic1
+        - /MarkerArray1
+      Splitter Ratio: 0.6143617033958435
     Tree Height: 1147
   - Class: rviz_common/Selection
     Name: Selection
@@ -196,15 +197,15 @@ Visualization Manager:
           Axis: Z
           Channel Name: intensity
           Class: rviz_default_plugins/PointCloud2
-          Color: 200; 0; 3
-          Color Transformer: Intensity
+          Color: 0; 255; 0
+          Color Transformer: FlatColor
           Decay Time: 0
           Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
-          Max Intensity: -1
+          Max Intensity: 0
           Min Color: 0; 0; 0
-          Min Intensity: -1
+          Min Intensity: 0
           Name: Path trajectory
           Position Transformer: XYZ
           Selectable: true
@@ -217,11 +218,11 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /curr_path
+            Value: /map_path
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 0.05000000074505806
+        - Alpha: 0.020999999716877937
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
             Max Value: 10
@@ -233,7 +234,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 99999997952
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Max Intensity: 151
@@ -241,7 +242,7 @@ Visualization Manager:
           Min Intensity: 0
           Name: global map
           Position Transformer: XYZ
-          Selectable: true
+          Selectable: false
           Size (Pixels): 1
           Size (m): 1
           Style: Points
@@ -251,56 +252,9 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /cloud_registered
+            Value: /map_cmap
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
-        - Alpha: 0.05000000074505806
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz_default_plugins/PointCloud2
-          Color: 200; 0; 3
-          Color Transformer: FlatColor
-          Decay Time: 99999997952
-          Enabled: false
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Max Intensity: 0
-          Min Color: 0; 0; 0
-          Min Intensity: 0
-          Name: global map init
-          Position Transformer: XYZ
-          Selectable: true
-          Size (Pixels): 1
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            Filter size: 10
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /map_init
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
-        - Class: rviz_default_plugins/Marker
-          Enabled: false
-          Name: plane
-          Namespaces:
-            {}
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            Filter size: 10
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /plane_markers
           Value: false
       Enabled: true
       Name: current data
@@ -322,7 +276,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        normal: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -334,7 +288,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        plane: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -388,25 +342,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 28.145906448364258
+      Distance: 138.83636474609375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 9.025489807128906
+        Y: 4.182923793792725
+        Z: -22.328189849853516
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8647966980934143
+      Pitch: 1.5297963619232178
       Target Frame: aft_mapped
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.380411624908447
+      Yaw: 3.150383710861206
     Saved: ~
 Window Geometry:
   Displays:
@@ -425,4 +379,4 @@ Window Geometry:
     collapsed: true
   Width: 2490
   X: 70
-  Y: 187
+  Y: 298

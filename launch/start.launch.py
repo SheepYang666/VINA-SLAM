@@ -1,44 +1,62 @@
 from launch_ros.actions import Node
 from launch import LaunchDescription
-import os
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+from launch.conditions import IfCondition
 
 
 def generate_launch_description() -> LaunchDescription:
-    config_path = os.path.join(
-        os.path.dirname(__file__),
-        '..',
-        'config',
-        # 'mid360.yaml'
-        'velodyne.yaml'
+    # Declare launch arguments
+    config_arg = DeclareLaunchArgument(
+        'vina_config',
+        default_value='mid360.yaml',
+        description='VINA-SLAM config file name'
     )
-    
-    slam_node = Node(
+
+    launch_rviz_arg = DeclareLaunchArgument(
+        'launch_rviz',
+        default_value='true',
+        description='Whether to launch RViz'
+    )
+
+    # VINA-SLAM config path
+    vina_config_path = PathJoinSubstitution([
+        FindPackageShare('vina_slam'),
+        'config',
+        LaunchConfiguration('vina_config')
+    ])
+
+    # RViz config path
+    rviz_config_path = PathJoinSubstitution([
+        FindPackageShare('vina_slam'),
+        'rviz_cfg',
+        'rviz_cfg.rviz'
+    ])
+
+    # VINA-SLAM node
+    vina_slam_node = Node(
         package='vina_slam',
         executable='vina_slam',
         name='vina_slam',
         output='screen',
-        parameters=[config_path],
+        parameters=[vina_config_path],
         arguments=['--ros-args', '--log-level', 'INFO'],
     )
 
-    rviz_path = os.path.join(
-        os.path.dirname(__file__),
-        '..',
-        'rviz_cfg',
-        'rviz_cfg.rviz'
-    )
-
+    # RViz node (conditional)
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d', rviz_path],
+        arguments=['-d', rviz_config_path],
+        condition=IfCondition(LaunchConfiguration('launch_rviz'))
     )
 
     return LaunchDescription([
-
-        
-        slam_node,
+        config_arg,
+        launch_rviz_arg,
+        vina_slam_node,
         rviz_node,
     ])
