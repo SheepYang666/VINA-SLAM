@@ -26,6 +26,8 @@ General:
   pose_save_path: ""
   # Pose trajectory filename
   pose_filename: "trajectory.txt"
+  # Enable local BA: 0=EKF only, 1=sliding-window BA
+  if_BA: 1
   # Voxel downsample size (m) when saving the global map
   full_map_voxel_size: 0.05
   # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
