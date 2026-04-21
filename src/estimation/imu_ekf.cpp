@@ -11,7 +11,7 @@ IMUEKF::IMUEKF()
 }
 
 void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
-                         deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus)
+                         deque<sensor_msgs::Imu::Ptr> &imus)
 {
 
     imus.push_front(last_imu);
@@ -32,10 +32,10 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
     double dt = 0;
     for (auto it_imu = imus.begin(); it_imu != imus.end() - 1; it_imu++)
     {
-        sensor_msgs::msg::Imu &head = *(*it_imu);
-        sensor_msgs::msg::Imu &tail = *(*(it_imu + 1));
+        sensor_msgs::Imu &head = *(*it_imu);
+        sensor_msgs::Imu &tail = *(*(it_imu + 1));
 
-        if (rclcpp::Time(head.header.stamp).seconds() < last_pcl_end_time)
+        if (head.header.stamp.toSec() < last_pcl_end_time)
         {
             continue;
         }
@@ -51,13 +51,13 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
         acc_avr = acc_avr * scale_gravity - xc.ba;
         acc_imu = R_imu * acc_avr + xc.g;
 
-        double cur_time = rclcpp::Time(head.header.stamp).seconds();
+        double cur_time = head.header.stamp.toSec();
         if (cur_time < last_pcl_end_time)
         {
             cur_time = last_pcl_end_time;
         }
 
-        dt = rclcpp::Time(tail.header.stamp).seconds() - cur_time;
+        dt = tail.header.stamp.toSec() - cur_time;
 
         double offt = cur_time - pcl_beg_time;
         imu_poses.emplace_back(offt, R_imu, pos_imu, vel_imu, angvel_avr, acc_imu);
@@ -85,7 +85,7 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
         R_imu = R_imu * Exp_f;
     }
 
-    double imu_end_time = rclcpp::Time(imus.back()->header.stamp).seconds();
+    double imu_end_time = imus.back()->header.stamp.toSec();
     double note = pcl_end_time > imu_end_time ? 1.0 : -1.0;
     dt = note * (pcl_end_time - imu_end_time);
     xc.v = vel_imu + note * acc_imu * dt;
@@ -93,11 +93,11 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
     xc.p = pos_imu + note * vel_imu * dt + note * 0.5 * acc_imu * dt * dt;
     xc.t = pcl_end_time;
 
-    auto imu1 = std::make_shared<sensor_msgs::msg::Imu>(*imus.front());
-    auto imu2 = std::make_shared<sensor_msgs::msg::Imu>(*imus.back());
+    sensor_msgs::Imu::Ptr imu1(new sensor_msgs::Imu(*imus.front()));
+    sensor_msgs::Imu::Ptr imu2(new sensor_msgs::Imu(*imus.back()));
 
-    imu1->header.stamp = rclcpp::Time(static_cast<int64_t>(last_pcl_end_time * 1e9));
-    imu2->header.stamp = rclcpp::Time(static_cast<int64_t>(pcl_end_time * 1e9));
+    imu1->header.stamp.fromSec(last_pcl_end_time);
+    imu2->header.stamp.fromSec(pcl_end_time);
 
     // Update the deque
     last_imu = imus.back();
@@ -144,7 +144,7 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
     }
 }
 
-void IMUEKF::IMU_init(deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus)
+void IMUEKF::IMU_init(deque<sensor_msgs::Imu::Ptr> &imus)
 {
     Eigen::Vector3d cur_acc, cur_gyr;
 
@@ -172,7 +172,7 @@ void IMUEKF::IMU_init(deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus)
 }
 
 int IMUEKF::process(IMUST &x_curr, pcl::PointCloud<PointType> &pcl_in,
-                    deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus)
+                    deque<sensor_msgs::Imu::Ptr> &imus)
 {
 
     if (!init_flag)

@@ -2,8 +2,8 @@
 
 #include "vina_slam/tools.hpp"
 #include <deque>
-#include <rclcpp/time.hpp>
-#include <sensor_msgs/msg/imu.hpp>
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
 
 extern double imupre_scale_gravity;
 extern Eigen::Matrix<double, 6, 6> noiseMeas; // IMU measurement noise
@@ -31,7 +31,7 @@ class IMU_PRE
     Eigen::Vector3d dbg_buf, dba_buf;
 
     // queue for raw IMU data
-    deque<sensor_msgs::msg::Imu::SharedPtr> _imus;
+    deque<sensor_msgs::Imu::Ptr> _imus;
 
   private:
     void add_imu(Eigen::Vector3d &cur_gyr, Eigen::Vector3d &cur_acc, double dt);
@@ -39,7 +39,7 @@ class IMU_PRE
   public:
     IMU_PRE(const Eigen::Vector3d &bg1 = Eigen::Vector3d::Zero(), const Eigen::Vector3d &ba1 = Eigen::Vector3d::Zero());
 
-    void push_imu(deque<sensor_msgs::msg::Imu::SharedPtr> &imu_buffer);
+    void push_imu(deque<sensor_msgs::Imu::Ptr> &imu_buffer);
 
     double give_evaluate(IMUST &st1, IMUST &st2, Eigen::MatrixXd &jtj, Eigen::VectorXd &gg, bool jac_enable);
 

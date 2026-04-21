@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.0.2)
 project(vina_slam)
 
 cmake_policy(SET CMP0074 NEW)
@@ -22,20 +22,29 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # ===============================
 # Find Dependencies
 # ===============================
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(visualization_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(tf2_eigen REQUIRED)
-find_package(pcl_conversions REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  nav_msgs
+  visualization_msgs
+  pcl_conversions
+  pcl_ros
+  tf
+  livox_ros_driver
+)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 find_package(Eigen3 REQUIRED)
-find_package(livox_ros_driver2 REQUIRED)
 
 message(STATUS "Eigen version: ${EIGEN_VERSION}")
+
+catkin_package(
+  INCLUDE_DIRS include
+  CATKIN_DEPENDS roscpp sensor_msgs std_msgs geometry_msgs nav_msgs visualization_msgs pcl_conversions pcl_ros tf
+                 livox_ros_driver
+  DEPENDS Eigen3 PCL
+)
 
 # ===============================
 # Source Files
@@ -54,10 +63,10 @@ set(SOURCES
   src/pipeline/initialization.cpp
   src/pipeline/odometry.cpp
   src/pipeline/local_mapping.cpp
-  src/platform/ros2/publishers.cpp
-  src/platform/ros2/subscribers.cpp
-  src/platform/ros2/io.cpp
-  src/platform/ros2/node.cpp
+  src/platform/ros1/publishers.cpp
+  src/platform/ros1/subscribers.cpp
+  src/platform/ros1/io.cpp
+  src/platform/ros1/node.cpp
 )
 
 # ===============================
@@ -71,11 +80,13 @@ add_executable(${PROJECT_NAME}
 # Include Directories
 # ===============================
 target_include_directories(${PROJECT_NAME} PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+  include
+  ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
 )
+
+add_definitions(${PCL_DEFINITIONS})
 
 # ===============================
 # Compile Options
@@ -99,23 +110,8 @@ endif()
 # ===============================
 # Target Dependencies
 # ===============================
-ament_target_dependencies(${PROJECT_NAME}
-  rclcpp
-  sensor_msgs
-  geometry_msgs
-  nav_msgs
-  visualization_msgs
-  pcl_conversions
-  tf2_ros
-  livox_ros_driver2
-
-  # livox_ros_driver
-)
-
-# ===============================
-# Link Libraries
-# ===============================
 target_link_libraries(${PROJECT_NAME}
+  ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
 )
 
@@ -123,11 +119,11 @@ target_link_libraries(${PROJECT_NAME}
 # Install Rules
 # ===============================
 install(TARGETS ${PROJECT_NAME}
-  DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 install(DIRECTORY include/
-  DESTINATION include/${PROJECT_NAME}
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
   FILES_MATCHING
   PATTERN "*.h"
   PATTERN "*.hpp"
@@ -137,28 +133,5 @@ install(DIRECTORY
   config
   launch
   rviz_cfg
-  DESTINATION share/${PROJECT_NAME}
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
-
-# ===============================
-# Tests
-# ===============================
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
-endif()
-
-# ===============================
-# Export Package Information
-# ===============================
-ament_export_include_directories(include/${PROJECT_NAME})
-ament_export_dependencies(
-  rclcpp
-  sensor_msgs
-  pcl_conversions
-  PCL
-  Eigen3
-  tf2_ros
-)
-
-ament_package()

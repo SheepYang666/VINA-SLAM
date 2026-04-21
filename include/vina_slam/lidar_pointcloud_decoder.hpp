@@ -6,16 +6,15 @@
 #include <Eigen/Core>
 #include <cstdint>
 #include <cstdio>
-// #include <livox_ros_driver/msg/custom_msg.hpp>
-#include <livox_ros_driver2/msg/custom_msg.hpp>
+#include <livox_ros_driver/CustomMsg.h>
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/register_point_struct.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <ros/ros.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
 
 using PointType = pcl::PointXYZINormal;
 
@@ -112,20 +111,19 @@ public:
   double blind = 1.0;
   double omega_l = 3610.0;
 
-  double process(const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
-  double process(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  double process(const livox_ros_driver::CustomMsg::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  double process(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
 private:
-  void livox_handler(const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
-  // void livox_handler(const livox_ros_driver::msg::CustomMsg::SharedPtr &msg, pcl::PointCloud<PointType> &pl_full);
+  void livox_handler(const livox_ros_driver::CustomMsg::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
-  void velodyne_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  void velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
-  void ouster_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  void ouster_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
-  void hesai_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  void hesai_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
-  double robosense_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  double robosense_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
-  void tartanair_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
+  void tartanair_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 };

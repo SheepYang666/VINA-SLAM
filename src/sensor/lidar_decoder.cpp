@@ -1,11 +1,11 @@
 #include "vina_slam/sensor/lidar_decoder.hpp"
 #include "vina_slam/sensor/sync.hpp"
 
-#include <livox_ros_driver2/msg/custom_msg.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <livox_ros_driver/CustomMsg.h>
+#include <sensor_msgs/PointCloud2.h>
 
 template <class T>
-void pcl_handler(T& msg)
+void pcl_handler(const T& msg)
 {
   pcl::PointCloud<PointType>::Ptr pl_ptr(new pcl::PointCloud<PointType>());
 
@@ -42,8 +42,5 @@ void pcl_handler(T& msg)
   mBuf.unlock();
 }
 
-// Explicit template instantiations for the two message types used
-template void pcl_handler<const livox_ros_driver2::msg::CustomMsg::SharedPtr>(
-    const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg);
-template void
-pcl_handler<const sensor_msgs::msg::PointCloud2::SharedPtr>(const sensor_msgs::msg::PointCloud2::SharedPtr& msg);
+template void pcl_handler<livox_ros_driver::CustomMsg::ConstPtr>(const livox_ros_driver::CustomMsg::ConstPtr& msg);
+template void pcl_handler<sensor_msgs::PointCloud2::ConstPtr>(const sensor_msgs::PointCloud2::ConstPtr& msg);

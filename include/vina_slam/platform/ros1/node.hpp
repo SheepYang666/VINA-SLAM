@@ -10,8 +10,8 @@
 #include <deque>
 #include <fstream>
 #include <pcl/point_cloud.h>
-#include <rclcpp/node.hpp>
-#include <sensor_msgs/msg/imu.hpp>
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -19,7 +19,6 @@
 
 using namespace std;
 
-// Global variables used by the VINA_SLAM class
 extern double dept_err, beam_err;
 
 inline double get_memory();
@@ -27,7 +26,8 @@ inline double get_memory();
 class VINA_SLAM
 {
 private:
-  rclcpp::Node::SharedPtr node;
+  ros::NodeHandle nh;
+  ros::NodeHandle pnh;
 
 public:
   pcl::PointCloud<PointType> pcl_path;
@@ -58,13 +58,8 @@ public:
   std::string pose_save_path;
   std::string pose_filename;
 
-  static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
+  explicit VINA_SLAM(const ros::NodeHandle& nh_in, const ros::NodeHandle& pnh_in);
 
-  static VINA_SLAM& instance();
-
-  explicit VINA_SLAM(const rclcpp::Node::SharedPtr& node_in);
-
-  // Odometry methods (implemented in pipeline/odometry.cpp)
   bool lio_state_estimation(PVecPtr pptr);
   bool VNC_lio(PVecPtr pptr);
   bool LioStateEstimation(PVecPtr pptr, bool use_vnc);
@@ -72,13 +67,11 @@ public:
   pcl::PointCloud<PointType>::Ptr pl_tree;
   void lio_state_estimation_kdtree(PVecPtr pptr);
 
-  // Initialization wrapper (implemented in node.cpp)
-  int initialization(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus, Eigen::MatrixXd& hess, LidarFactor& voxhess,
+  int initialization(deque<sensor_msgs::Imu::Ptr>& imus, Eigen::MatrixXd& hess, LidarFactor& voxhess,
                      PLV(3) & pwld, pcl::PointCloud<PointType>::Ptr pcl_curr);
 
-  void system_reset(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus);
+  void system_reset(deque<sensor_msgs::Imu::Ptr>& imus);
 
-  // Local mapping methods (implemented in pipeline/local_mapping.cpp)
   void multi_margi(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, double jour, int win_count, vector<IMUST>& xs,
                    LidarFactor& voxopt, vector<SlideWindow*>& sw);
 
@@ -91,11 +84,9 @@ public:
   void multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int win_count, vector<IMUST>& xs,
                    vector<vector<SlideWindow*>>& sws);
 
-  // The main thread of odometry and local mapping (implemented in pipeline/local_mapping.cpp)
-  void thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node);
+  void thd_odometry_localmapping();
 };
 
-// Inline implementation of get_memory
 inline double get_memory()
 {
   std::ifstream infile("/proc/self/status");

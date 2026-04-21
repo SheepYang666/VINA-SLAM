@@ -1,4 +1,4 @@
-#include "vina_slam/platform/ros2/io.hpp"
+#include "vina_slam/platform/ros1/io.hpp"
 
 #include <Eigen/Geometry>
 #include <fstream>
@@ -6,20 +6,10 @@
 #include <iostream>
 #include <pcl/io/pcd_io.h>
 
-FileReaderWriter::FileReaderWriter(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
-{
-}
-
-FileReaderWriter& FileReaderWriter::instance(const rclcpp::Node::SharedPtr& node_in)
-{
-  static FileReaderWriter inst(node_in);
-  return inst;
-}
-
 FileReaderWriter& FileReaderWriter::instance()
 {
-  rclcpp::Node::SharedPtr node_temp;
-  return instance(node_temp);
+  static FileReaderWriter inst;
+  return inst;
 }
 
 void FileReaderWriter::save_pcd(PVecPtr pptr, IMUST& xx, int count, const string& savename)

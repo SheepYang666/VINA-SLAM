@@ -18,17 +18,17 @@ T decode_field(const uint8_t* data, bool is_bigendian)
   return value;
 }
 
-double LidarPointCloudDecoder::process(const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg,
+double LidarPointCloudDecoder::process(const livox_ros_driver::CustomMsg::ConstPtr& msg,
                                        pcl::PointCloud<PointType>& pl_full)
 {
   livox_handler(msg, pl_full);
-  return rclcpp::Time(msg->header.stamp).seconds();
+  return msg->header.stamp.toSec();
 }
 
-double LidarPointCloudDecoder::process(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+double LidarPointCloudDecoder::process(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                        pcl::PointCloud<PointType>& pl_full)
 {
-  double t0 = rclcpp::Time(msg->header.stamp).seconds();
+  double t0 = msg->header.stamp.toSec();
 
   switch (lidar_type)
   {
@@ -53,7 +53,7 @@ double LidarPointCloudDecoder::process(const sensor_msgs::msg::PointCloud2::Shar
   return t0;
 }
 
-void LidarPointCloudDecoder::livox_handler(const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg,
+void LidarPointCloudDecoder::livox_handler(const livox_ros_driver::CustomMsg::ConstPtr& msg,
                                            pcl::PointCloud<PointType>& pl_full)
 {
   size_t N = msg->point_num;
@@ -74,7 +74,7 @@ void LidarPointCloudDecoder::livox_handler(const livox_ros_driver2::msg::CustomM
   }
 }
 
-void LidarPointCloudDecoder::velodyne_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+void LidarPointCloudDecoder::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                               pcl::PointCloud<PointType>& pl_full)
 {
   pcl::PointCloud<velodyne_ros::Point> pl_orig;
@@ -141,7 +141,7 @@ void LidarPointCloudDecoder::velodyne_handler(const sensor_msgs::msg::PointCloud
   }
 }
 
-void LidarPointCloudDecoder::ouster_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+void LidarPointCloudDecoder::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                             pcl::PointCloud<PointType>& pl_full)
 {
   pcl::PointCloud<ouster_ros::Point> pl_orig;
@@ -165,7 +165,7 @@ void LidarPointCloudDecoder::ouster_handler(const sensor_msgs::msg::PointCloud2:
   }
 }
 
-void LidarPointCloudDecoder::hesai_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+void LidarPointCloudDecoder::hesai_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                            pcl::PointCloud<PointType>& pl_full)
 {
   pcl::PointCloud<xt32_ros::Point> pl_orig;
@@ -194,7 +194,7 @@ void LidarPointCloudDecoder::hesai_handler(const sensor_msgs::msg::PointCloud2::
   }
 }
 
-double LidarPointCloudDecoder::robosense_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+double LidarPointCloudDecoder::robosense_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                                  pcl::PointCloud<PointType>& pl_full)
 {
   pcl::PointCloud<rslidar_ros::Point> pl_orig;
@@ -202,7 +202,7 @@ double LidarPointCloudDecoder::robosense_handler(const sensor_msgs::msg::PointCl
 
   size_t N = pl_orig.points.size();
   pl_full.reserve(N);
-  double t_base_s = rclcpp::Time(msg->header.stamp).seconds();
+  double t_base_s = msg->header.stamp.toSec();
 
   for (size_t i = 0; i < N; ++i)
   {
@@ -222,7 +222,7 @@ double LidarPointCloudDecoder::robosense_handler(const sensor_msgs::msg::PointCl
   return t_base_s;
 }
 
-void LidarPointCloudDecoder::tartanair_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+void LidarPointCloudDecoder::tartanair_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
                                                pcl::PointCloud<PointType>& pl_full)
 {
   pcl::PointCloud<pcl::PointXYZ> pl_orig;

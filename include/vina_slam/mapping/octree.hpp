@@ -5,7 +5,7 @@
 #include "vina_slam/mapping/slide_window.hpp"
 #include <mutex>
 #include <unordered_set>
-#include <visualization_msgs/msg/marker_array.hpp>
+#include <visualization_msgs/MarkerArray.h>
 
 extern Eigen::Vector4d min_point;
 extern double min_eigen_value;
@@ -87,11 +87,11 @@ public:
 
   void clear_slwd(std::vector<SlideWindow*>& sws);
 
-  void collect_plane_markers(visualization_msgs::msg::MarkerArray& out, int max_layer,
+  void collect_plane_markers(visualization_msgs::MarkerArray& out, int max_layer,
                              std::unordered_set<int>& used_ids, float alpha = 0.8f, double max_trace = 0.25,
                              double pow_num = 0.2);
 
-  void collect_normal_markers(visualization_msgs::msg::MarkerArray& out, int max_layer,
+  void collect_normal_markers(visualization_msgs::MarkerArray& out, int max_layer,
                               std::unordered_set<int>& used_ids, float alpha = 0.8f, double max_trace = 0.25,
                               double pow_num = 0.2);
 };

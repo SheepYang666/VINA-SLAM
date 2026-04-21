@@ -6,23 +6,12 @@
 
 #include <Eigen/Eigenvalues>
 #include <iostream>
-#include <rclcpp/logging.hpp>
-#include <rclcpp/time.hpp>
-
-Initialization::Initialization(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
-{
-}
-
-Initialization& Initialization::instance(const rclcpp::Node::SharedPtr& node_in)
-{
-  static Initialization inst(node_in);
-  return inst;
-}
+#include <ros/ros.h>
 
 Initialization& Initialization::instance()
 {
-  rclcpp::Node::SharedPtr node_temp;
-  return instance(node_temp);
+  static Initialization inst;
+  return inst;
 }
 
 void Initialization::align_gravity(vector<IMUST>& xs)
@@ -62,7 +51,7 @@ void Initialization::align_gravity(vector<IMUST>& xs)
 }
 
 void Initialization::motion_blur(pcl::PointCloud<PointType>& pl, PVec& pvec, IMUST xc, IMUST xl,
-                                 deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus, double pcl_beg_time,
+                                 deque<sensor_msgs::Imu::Ptr>& imus, double pcl_beg_time,
                                  IMUST& extrin_para)
 {
   // Initialize bias + current IMU status variable
@@ -75,8 +64,8 @@ void Initialization::motion_blur(pcl::PointCloud<PointType>& pl, PVec& pvec, IMU
   // IMU Integral build status sequence imu_poses
   for (auto it_imu = imus.end() - 1; it_imu != imus.begin(); it_imu--)
   {
-    sensor_msgs::msg::Imu& head = **(it_imu - 1);  // Early time
-    sensor_msgs::msg::Imu& tail = **(it_imu);      // Time tonight
+    sensor_msgs::Imu& head = **(it_imu - 1);  // Early time
+    sensor_msgs::Imu& tail = **(it_imu);      // Time tonight
 
     /*Mean filtering (interpolated angular velocity and acceleration)*/
     angvel_avr << 0.5 * (head.angular_velocity.x + tail.angular_velocity.x),
@@ -90,7 +79,7 @@ void Initialization::motion_blur(pcl::PointCloud<PointType>& pl, PVec& pvec, IMU
     acc_avr = acc_avr * imupre_scale_gravity - xc.ba;
 
     // Pose increment (exp map)
-    double dt = rclcpp::Time(head.header.stamp).seconds() - rclcpp::Time(tail.header.stamp).seconds();
+    double dt = head.header.stamp.toSec() - tail.header.stamp.toSec();
     Eigen::Matrix3d acc_avr_skew = hat(acc_avr);
     Eigen::Matrix3d Exp_f = Exp(angvel_avr, dt);
 
@@ -102,7 +91,7 @@ void Initialization::motion_blur(pcl::PointCloud<PointType>& pl, PVec& pvec, IMU
     R_imu = R_imu * Exp_f;
 
     // Save the current status to imu_poses
-    double offt = rclcpp::Time(head.header.stamp).seconds() - pcl_beg_time;
+    double offt = head.header.stamp.toSec() - pcl_beg_time;
     imu_poses.emplace_back(offt, R_imu, pos_imu, vel_imu, angvel_avr, acc_imu);
   }
 
@@ -156,7 +145,7 @@ void Initialization::motion_blur(pcl::PointCloud<PointType>& pl, PVec& pvec, IMU
 }
 
 int Initialization::motion_init(vector<pcl::PointCloud<PointType>::Ptr>& pl_origs,
-                                vector<deque<std::shared_ptr<sensor_msgs::msg::Imu>>>& vec_imus,
+                                vector<deque<sensor_msgs::Imu::Ptr>>& vec_imus,
                                 vector<double>& beg_times, Eigen::MatrixXd* hess, LidarFactor& voxhess,
                                 vector<IMUST>& x_buf, unordered_map<VOXEL_LOC, OctoTree*>& surf_map,
                                 unordered_map<VOXEL_LOC, OctoTree*>& surf_map_slide, vector<PVecPtr>& pvec_buf,
@@ -177,8 +166,6 @@ int Initialization::motion_init(vector<pcl::PointCloud<PointType>::Ptr>& pl_orig
     iter = 1.0 / 4;
   }
 
-  double t0 = node->now().seconds();
-
   double converge_thre = 0.05;
   int converge_times = 0;
 
@@ -187,7 +174,7 @@ int Initialization::motion_init(vector<pcl::PointCloud<PointType>::Ptr>& pl_orig
   Eigen::Vector3d eigvalue;
   eigvalue.setZero();
 
-  // Reference to global dept_err, beam_err declared in platform/ros2/node
+  // Reference to global dept_err, beam_err declared in platform/ros1/node
   extern double dept_err, beam_err;
 
   for (int iterCnt = 0; iterCnt < 10; iterCnt++)
@@ -347,8 +334,6 @@ int Initialization::motion_init(vector<pcl::PointCloud<PointType>::Ptr>& pl_orig
   pl_origs.clear();
   vec_imus.clear();
   beg_times.clear();
-  double t1 = rclcpp::Clock().now().seconds();
-
   pcl::PointCloud<PointType> pcl_send;
   PointType pt;
   for (int i = 0; i < win_size; i++)

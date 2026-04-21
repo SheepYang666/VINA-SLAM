@@ -1,9 +1,9 @@
 // Local mapping methods of VINA_SLAM class
 // Moved from VINASlam.cpp: multi_margi(), multi_recut() (3 overloads), thd_odometry_localmapping()
 
-#include "vina_slam/platform/ros2/node.hpp"
-#include "vina_slam/platform/ros2/publishers.hpp"
-#include "vina_slam/platform/ros2/io.hpp"
+#include "vina_slam/platform/ros1/node.hpp"
+#include "vina_slam/platform/ros1/publishers.hpp"
+#include "vina_slam/platform/ros1/io.hpp"
 #include "vina_slam/pipeline/initialization.hpp"
 #include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/mapping/optimizers.hpp"
@@ -255,7 +255,7 @@ void VINA_SLAM::multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int w
 
 // The main thread of odometry and local mapping
 
-void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
+void VINA_SLAM::thd_odometry_localmapping()
 {
   PLV(3) pwld;
   double down_sizes[3] = { 0.1, 0.2, 0.4 };
@@ -268,7 +268,7 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
   pl_tree.reset(new pcl::PointCloud<PointType>());
   vector<pcl::PointCloud<PointType>::Ptr> pl_origs;
   vector<double> beg_times;
-  vector<deque<std::shared_ptr<sensor_msgs::msg::Imu>>> vec_imus;
+  vector<deque<sensor_msgs::Imu::Ptr>> vec_imus;
   bool release_flag = false;
   int degrade_cnt = 0;
 
@@ -287,17 +287,18 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
     FileReaderWriter::instance().init_pose_file(dir + pose_filename);
   }
 
-  while (rclcpp::ok())
+  while (ros::ok())
   {
-    node->get_parameter("finish", is_finish);
+    pnh.param("finish", is_finish, false);
 
     if (is_finish)
     {
+      ros::shutdown();
       break;
     }
 
     // Synchronize IMU and point cloud data
-    deque<std::shared_ptr<sensor_msgs::msg::Imu>> imus;
+    deque<sensor_msgs::Imu::Ptr> imus;
     bool if_sync_packages = sync_packages(pcl_curr, imus, odom_ekf);
 
     if (!if_sync_packages)
@@ -356,14 +357,14 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       continue;
     }
 
-    double t0 = node->now().seconds();
+    double t0 = ros::Time::now().toSec();
     double t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0;
 
     if (motion_init_flag)
     {
       if (pcl_curr->empty())
       {
-        RCLCPP_WARN(node->get_logger(), "pcl_curr is empty or null");
+        ROS_WARN("pcl_curr is empty or null");
       }
 
       int init = initialization(imus, hess, voxhess, pwld, pcl_curr);
@@ -429,7 +430,7 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       if (is_save_pose == 1)
         FileReaderWriter::instance().save_pose_tum(x_curr);
 
-      t1 = node->now().seconds();
+      t1 = ros::Time::now().toSec();
 
       win_count++;
       x_buf.push_back(x_curr);
@@ -446,16 +447,16 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       normalFactor.win_size = win_size;
 
       cut_voxel_multi(surf_map, pvec_buf[win_count - 1], win_count - 1, surf_map_slide, win_size, pwld, sws);
-      t2 = node->now().seconds();
+      t2 = ros::Time::now().toSec();
 
       multi_recut(surf_map_slide, win_count, x_buf, voxhess, normalFactor, sws);
-      t3 = node->now().seconds();
+      t3 = ros::Time::now().toSec();
 
       // Publish voxel plane and normal markers if visualization is enabled
       if (enable_visualization)
       {
-        visualization_msgs::msg::MarkerArray voxel_plane;
-        visualization_msgs::msg::MarkerArray voxel_normal;
+        visualization_msgs::MarkerArray voxel_plane;
+        visualization_msgs::MarkerArray voxel_normal;
         std::unordered_set<int> voxel_plane_ids;
         std::unordered_set<int> voxel_normal_ids;
         for (auto& kv : surf_map_slide)
@@ -488,7 +489,7 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
 
     if (win_count >= win_size)
     {
-      t4 = node->now().seconds();
+      t4 = ros::Time::now().toSec();
       if (if_BA == 1)
       {
         LI_BA_Optimizer opt_lsv;
@@ -500,12 +501,12 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
 
       x_curr.R = x_buf[win_count - 1].R;
       x_curr.p = x_buf[win_count - 1].p;
-      t5 = node->now().seconds();
+      t5 = ros::Time::now().toSec();
 
       ResultOutput::instance().pub_localmap(mgsize, 0, pvec_buf, x_buf, pcl_path, win_base, win_count);
 
       multi_margi(surf_map_slide, jour, win_count, x_buf, voxhess, sws[0]);
-      t6 = node->now().seconds();
+      t6 = ros::Time::now().toSec();
 
       if ((win_base + win_count) % 10 == 0)
       {
@@ -545,7 +546,7 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       win_base += mgsize;
       win_count -= mgsize;
     }
-    double t_end = node->now().seconds();
+    double t_end = ros::Time::now().toSec();
     double mem = get_memory();
   }
 

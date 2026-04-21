@@ -2,7 +2,7 @@
 #include "vina_slam/core/math.hpp"
 #include <cmath>
 #include <cstdio>
-#include <rclcpp/clock.hpp>
+#include <ros/ros.h>
 #include <thread>
 
 double imu_coef = 1e-4;
@@ -451,9 +451,9 @@ void LI_BA_Optimizer::damping_iter(vector<IMUST>& x_stats, LidarFactor& voxhess,
   {
     if (is_calc_hess)
     {
-      double tm = rclcpp::Clock().now().seconds();
+      double tm = ros::Time::now().toSec();
       residual1 = divide_thread(x_stats, voxhess, imus_factor, Hess, JacT);
-      hesstime += rclcpp::Clock().now().seconds() - tm;
+      hesstime += ros::Time::now().toSec() - tm;
       *hess = Hess;
     }
 
@@ -479,9 +479,9 @@ void LI_BA_Optimizer::damping_iter(vector<IMUST>& x_stats, LidarFactor& voxhess,
 
     double q1 = 0.5 * dxi.dot(u * D * dxi - JacT);
 
-    double tl1 = rclcpp::Clock().now().seconds();
+    double tl1 = ros::Time::now().toSec();
     residual2 = only_residual(x_stats_temp, voxhess, imus_factor);
-    double tl2 = rclcpp::Clock().now().seconds();
+    double tl2 = ros::Time::now().toSec();
 
     resitime += tl2 - tl1;
 

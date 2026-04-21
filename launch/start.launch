@@ -1,0 +1,12 @@
+<launch>
+  <arg name="vina_config" default="velodyne.yaml" />
+  <arg name="launch_rviz" default="true" />
+
+  <node pkg="vina_slam" type="vina_slam" name="vina_slam" output="screen">
+    <rosparam command="load" file="$(find vina_slam)/config/$(arg vina_config)" />
+  </node>
+
+  <node pkg="rviz" type="rviz" name="rviz" output="screen"
+        args="-d $(find vina_slam)/rviz_cfg/rviz_cfg.rviz"
+        if="$(arg launch_rviz)" />
+</launch>

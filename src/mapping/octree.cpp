@@ -755,7 +755,7 @@ void OctoTree::clear_slwd(std::vector<SlideWindow*>& sws)
   }
 }
 
-void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, int max_layer,
+void OctoTree::collect_plane_markers(visualization_msgs::MarkerArray& out, int max_layer,
                                      std::unordered_set<int>& used_ids, float alpha, double max_trace, double pow_num)
 {
   if (layer > max_layer)
@@ -768,11 +768,11 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
       const int id = voxel_id_from_center(voxel_center, layer);
       if (used_ids.insert(id).second)
       {
-        visualization_msgs::msg::Marker marker;
+        visualization_msgs::Marker marker;
         marker.header.frame_id = "camera_init";
         marker.ns = "plane";
         marker.id = id;
-        marker.action = visualization_msgs::msg::Marker::DELETE;
+        marker.action = visualization_msgs::Marker::DELETE;
         out.markers.push_back(marker);
       }
       plane.is_published = false;
@@ -794,12 +794,12 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
       uint8_t r = 255, g = 255, b = 255;
       map_jet(trace, 0.0, 1.0, r, g, b);
 
-      visualization_msgs::msg::Marker marker;
+      visualization_msgs::Marker marker;
       marker.header.frame_id = "camera_init";
       marker.ns = "plane";
       marker.id = id;
-      marker.type = visualization_msgs::msg::Marker::CYLINDER;
-      marker.action = visualization_msgs::msg::Marker::ADD;
+      marker.type = visualization_msgs::Marker::CYLINDER;
+      marker.action = visualization_msgs::Marker::ADD;
       marker.pose.position.x = plane.center[0];
       marker.pose.position.y = plane.center[1];
       marker.pose.position.z = plane.center[2];
@@ -834,11 +834,11 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
     const int id = voxel_id_from_center(voxel_center, layer);
     if (used_ids.insert(id).second)
     {
-      visualization_msgs::msg::Marker marker;
+      visualization_msgs::Marker marker;
       marker.header.frame_id = "camera_init";
       marker.ns = "plane";
       marker.id = id;
-      marker.action = visualization_msgs::msg::Marker::DELETE;
+      marker.action = visualization_msgs::Marker::DELETE;
       out.markers.push_back(marker);
     }
     plane.is_published = false;
@@ -850,7 +850,7 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
       leaves[i]->collect_plane_markers(out, max_layer, used_ids, alpha, max_trace, pow_num);
 }
 
-void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out, int max_layer,
+void OctoTree::collect_normal_markers(visualization_msgs::MarkerArray& out, int max_layer,
                                       std::unordered_set<int>& used_ids, float alpha, double max_trace, double pow_num)
 {
   if (layer > max_layer)
@@ -863,11 +863,11 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
       const int id = voxel_id_from_center(voxel_center, layer);
       if (used_ids.insert(id).second)
       {
-        visualization_msgs::msg::Marker marker;
+        visualization_msgs::Marker marker;
         marker.header.frame_id = "camera_init";
         marker.ns = "normal";
         marker.id = id;
-        marker.action = visualization_msgs::msg::Marker::DELETE;
+        marker.action = visualization_msgs::Marker::DELETE;
         out.markers.push_back(marker);
       }
       plane.is_normal_published = false;
@@ -890,21 +890,21 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
       uint8_t r = 255, g = 255, b = 255;
       map_jet(trace, 0.0, 1.0, r, g, b);
 
-      visualization_msgs::msg::Marker marker;
+      visualization_msgs::Marker marker;
       marker.header.frame_id = "camera_init";
       marker.ns = "normal";
       marker.id = id;
-      marker.type = visualization_msgs::msg::Marker::ARROW;
-      marker.action = visualization_msgs::msg::Marker::ADD;
+      marker.type = visualization_msgs::Marker::ARROW;
+      marker.action = visualization_msgs::Marker::ADD;
 
       const double length = 2.0 * quater_length;
-      geometry_msgs::msg::Point p0;
+      geometry_msgs::Point p0;
       p0.x = plane.center[0];
       p0.y = plane.center[1];
       p0.z = plane.center[2];
 
       const Eigen::Vector3d n = plane.normal.normalized();
-      geometry_msgs::msg::Point p1;
+      geometry_msgs::Point p1;
       p1.x = plane.center[0] + n[0] * length;
       p1.y = plane.center[1] + n[1] * length;
       p1.z = plane.center[2] + n[2] * length;
@@ -932,11 +932,11 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
     const int id = voxel_id_from_center(voxel_center, layer);
     if (used_ids.insert(id).second)
     {
-      visualization_msgs::msg::Marker marker;
+      visualization_msgs::Marker marker;
       marker.header.frame_id = "camera_init";
       marker.ns = "normal";
       marker.id = id;
-      marker.action = visualization_msgs::msg::Marker::DELETE;
+      marker.action = visualization_msgs::Marker::DELETE;
       out.markers.push_back(marker);
     }
     plane.is_normal_published = false;

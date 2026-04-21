@@ -28,17 +28,17 @@ IMU_PRE::IMU_PRE(const Eigen::Vector3d &gyro_noise, const Eigen::Vector3d &accel
     cov.setZero();
 }
 
-void IMU_PRE::push_imu(deque<sensor_msgs::msg::Imu::SharedPtr> &imu_buffer)
+void IMU_PRE::push_imu(deque<sensor_msgs::Imu::Ptr> &imu_buffer)
 {
 
     _imus.insert(_imus.end(), imu_buffer.begin(), imu_buffer.end());
     Eigen::Vector3d cur_gyr, cur_acc;
     for (auto it_imu = imu_buffer.begin() + 1; it_imu != imu_buffer.end(); it_imu++)
     {
-        sensor_msgs::msg::Imu &imu_prev = **(it_imu - 1);
-        sensor_msgs::msg::Imu &imu_curr = **it_imu;
+        sensor_msgs::Imu &imu_prev = **(it_imu - 1);
+        sensor_msgs::Imu &imu_curr = **it_imu;
 
-        double dt = rclcpp::Time(imu_curr.header.stamp).seconds() - rclcpp::Time(imu_prev.header.stamp).seconds();
+        double dt = imu_curr.header.stamp.toSec() - imu_prev.header.stamp.toSec();
 
         cur_gyr << 0.5 * (imu_prev.angular_velocity.x + imu_curr.angular_velocity.x),
             0.5 * (imu_prev.angular_velocity.y + imu_curr.angular_velocity.y),

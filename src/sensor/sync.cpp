@@ -1,10 +1,9 @@
 #include "vina_slam/sensor/sync.hpp"
-#include <rclcpp/time.hpp>
 
 // Global sync buffer definitions (moved from VINASlam.hpp/cpp)
 mutex mBuf;
 LidarPointCloudDecoder feat;
-deque<std::shared_ptr<sensor_msgs::msg::Imu>> imu_buf;
+deque<sensor_msgs::Imu::Ptr> imu_buf;
 deque<pcl::PointCloud<PointType>::Ptr> pcl_buf;
 deque<double> time_buf;
 
@@ -15,7 +14,7 @@ double last_pcl_time = -1;
 mutex pcl_time_lock;
 double pcl_time = 0;
 
-bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus,
+bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<sensor_msgs::Imu::Ptr>& imus,
                    IMUEKF& p_imu)
 {
   static bool pl_ready = false;
@@ -65,10 +64,10 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
 
   // Step 3: Extract IMU data in the range [pcl_beg_time, pcl_end_time]
   mBuf.lock();
-  double imu_time = rclcpp::Time(imu_buf.front()->header.stamp).seconds();
+  double imu_time = imu_buf.front()->header.stamp.toSec();
   while ((!imu_buf.empty()) && (imu_time < p_imu.pcl_end_time))
   {
-    imu_time = rclcpp::Time(imu_buf.front()->header.stamp).seconds();
+    imu_time = imu_buf.front()->header.stamp.toSec();
     if (imu_time > p_imu.pcl_end_time)
       break;
     imus.push_back(imu_buf.front());  // Press the corresponding IMU data of the current frame

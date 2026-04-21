@@ -2,8 +2,8 @@
 
 #include "vina_slam/tools.hpp"
 #include <deque>
-#include <rclcpp/time.hpp>
-#include <sensor_msgs/msg/imu.hpp>
+#include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
 
 class IMUEKF
 {
@@ -13,7 +13,7 @@ class IMUEKF
     double pcl_beg_time, pcl_end_time, last_pcl_end_time;
     int init_num;
     Eigen::Vector3d mean_acc, mean_gyr;
-    std::shared_ptr<sensor_msgs::msg::Imu> last_imu;
+    sensor_msgs::Imu::Ptr last_imu;
 
     int min_init_num = 30;
     Eigen::Vector3d angvel_last, acc_s_last;
@@ -34,9 +34,9 @@ class IMUEKF
     IMUEKF();
 
     void motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
-                     deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus);
+                     deque<sensor_msgs::Imu::Ptr> &imus);
 
-    void IMU_init(deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus);
+    void IMU_init(deque<sensor_msgs::Imu::Ptr> &imus);
 
-    int process(IMUST &x_curr, pcl::PointCloud<PointType> &pcl_in, deque<std::shared_ptr<sensor_msgs::msg::Imu>> &imus);
+    int process(IMUST &x_curr, pcl::PointCloud<PointType> &pcl_in, deque<sensor_msgs::Imu::Ptr> &imus);
 };

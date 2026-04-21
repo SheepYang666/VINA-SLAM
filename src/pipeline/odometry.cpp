@@ -1,13 +1,13 @@
 // Odometry methods of VINA_SLAM class
 // Moved from VINASlam.cpp: lio_state_estimation(), VNC_lio(), lio_state_estimation_kdtree()
 
-#include "vina_slam/platform/ros2/node.hpp"
+#include "vina_slam/platform/ros1/node.hpp"
 #include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/mapping/voxel_map.hpp"
 
 #include <Eigen/Eigenvalues>
 #include <pcl/kdtree/kdtree_flann.h>
-#include <rclcpp/logging.hpp>
+#include <ros/ros.h>
 
 namespace
 {
@@ -270,7 +270,7 @@ void VINA_SLAM::lio_state_estimation_kdtree(PVecPtr pptr)
 
   if (!pptr || pptr->empty())
   {
-    RCLCPP_WARN(node->get_logger(), "Empty point cloud, skipping kdtree estimation");
+    ROS_WARN("Empty point cloud, skipping kdtree estimation");
     return;
   }
 
@@ -288,19 +288,18 @@ void VINA_SLAM::lio_state_estimation_kdtree(PVecPtr pptr)
 
     if (pl_tree->empty())
     {
-      RCLCPP_WARN(node->get_logger(),
-                  "[KdTree] pl_tree is empty after point insertion");
+      ROS_WARN("[KdTree] pl_tree is empty after point insertion");
       return;
     }
 
     try
     {
       kd_map.setInputCloud(pl_tree);
-      RCLCPP_DEBUG(node->get_logger(), "[KdTree] setInputCloud success, size: %zu", pl_tree->size());
+      ROS_DEBUG("[KdTree] setInputCloud success, size: %zu", pl_tree->size());
     }
     catch (const std::exception& e)
     {
-      RCLCPP_ERROR(node->get_logger(), "[KdTree] Exception: %s", e.what());
+      ROS_ERROR("[KdTree] Exception: %s", e.what());
     }
 
     return;

@@ -12,8 +12,8 @@
 #include "vina_slam/pipeline/odometry.hpp"
 #include "vina_slam/pipeline/local_mapping.hpp"
 
-// Platform/ROS2 module
-#include "vina_slam/platform/ros2/publishers.hpp"
-#include "vina_slam/platform/ros2/subscribers.hpp"
-#include "vina_slam/platform/ros2/io.hpp"
-#include "vina_slam/platform/ros2/node.hpp"
+// Platform/ROS1 module
+#include "vina_slam/platform/ros1/publishers.hpp"
+#include "vina_slam/platform/ros1/subscribers.hpp"
+#include "vina_slam/platform/ros1/io.hpp"
+#include "vina_slam/platform/ros1/node.hpp"
