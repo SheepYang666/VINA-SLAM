@@ -239,8 +239,9 @@ double LidarPointCloudDecoder::robosense_airy_handler(const sensor_msgs::msg::Po
   size_t N = pl_orig.points.size();
   pl_full.reserve(N);
 
-  // Airy exports point timestamps in seconds with a constant offset from header.stamp,
-  // so use the earliest point timestamp as the scan start instead of header.stamp.
+  // Airy point timestamps are in sensor-local seconds and keep a constant offset from
+  // header.stamp. Use the earliest point only to recover per-point relative time while
+  // keeping the frame timestamp on the ROS time base for IMU synchronization.
   double t_first = std::numeric_limits<double>::infinity();
   for (const auto& in : pl_orig.points)
   {
@@ -266,7 +267,7 @@ double LidarPointCloudDecoder::robosense_airy_handler(const sensor_msgs::msg::Po
       pl_full.push_back(pt);
     }
   }
-  return t_first;
+  return rclcpp::Time(msg->header.stamp).seconds();
 }
 
 void LidarPointCloudDecoder::tartanair_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
