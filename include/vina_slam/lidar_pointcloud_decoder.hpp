@@ -4,8 +4,11 @@
 // </home/yang/local_lib/ws_livox_alias/install/livox_ros_driver/include/livox_ros_driver/livox_ros_driver/msg/custom_msg.hpp>
 
 #include <Eigen/Core>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <livox_ros_driver/CustomMsg.h>
 
 #include <pcl/point_cloud.h>
@@ -25,7 +28,8 @@ enum LID_TYPE
   OUSTER,
   HESAI,      ///< HesaiXT32
   ROBOSENSE,  ///< Robosense
-  TARTANAIR   ///< TartanAir （No intensity / time）
+  TARTANAIR,  ///< TartanAir （No intensity / time）
+  ROBOSENSE_AIRY  ///< RoboSense Airy
 };
 
 struct LivoxPoint
@@ -103,6 +107,21 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(rslidar_ros::Point,
                                   (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(
                                       std::uint16_t, ring, ring)(double, timestamp, timestamp));
 
+namespace robosense
+{
+struct EIGEN_ALIGN16 Point
+{
+  PCL_ADD_POINT4D;
+  float intensity;
+  std::uint16_t ring = 0;
+  double timestamp = 0;
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+}  // namespace robosense
+POINT_CLOUD_REGISTER_POINT_STRUCT(robosense::Point,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(
+                                      std::uint16_t, ring, ring)(double, timestamp, timestamp));
+
 class LidarPointCloudDecoder
 {
 public:
@@ -124,6 +143,8 @@ private:
   void hesai_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
   double robosense_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
+
+  double robosense_airy_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
   void tartanair_handler(const sensor_msgs::PointCloud2::ConstPtr& msg, pcl::PointCloud<PointType>& pl_full);
 };

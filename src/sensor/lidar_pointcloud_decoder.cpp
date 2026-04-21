@@ -42,7 +42,10 @@ double LidarPointCloudDecoder::process(const sensor_msgs::PointCloud2::ConstPtr&
       hesai_handler(msg, pl_full);
       break;
     case ROBOSENSE:
-      robosense_handler(msg, pl_full);
+      t0 = robosense_handler(msg, pl_full);
+      break;
+    case ROBOSENSE_AIRY:
+      t0 = robosense_airy_handler(msg, pl_full);
       break;
     case TARTANAIR:
       tartanair_handler(msg, pl_full);
@@ -220,6 +223,50 @@ double LidarPointCloudDecoder::robosense_handler(const sensor_msgs::PointCloud2:
     }
   }
   return t_base_s;
+}
+
+double LidarPointCloudDecoder::robosense_airy_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
+                                                      pcl::PointCloud<PointType>& pl_full)
+{
+  pcl::PointCloud<robosense::Point> pl_orig;
+  pcl::fromROSMsg(*msg, pl_orig);
+
+  if (pl_orig.empty())
+  {
+    return msg->header.stamp.toSec();
+  }
+
+  size_t N = pl_orig.points.size();
+  pl_full.reserve(N);
+
+  // Airy exports point timestamps in seconds with a constant offset from header.stamp,
+  // so use the earliest point timestamp as the scan start instead of header.stamp.
+  double t_first = std::numeric_limits<double>::infinity();
+  for (const auto& in : pl_orig.points)
+  {
+    t_first = std::min(t_first, in.timestamp);
+  }
+  if (!std::isfinite(t_first))
+  {
+    return msg->header.stamp.toSec();
+  }
+
+  for (size_t i = 0; i < N; ++i)
+  {
+    const auto& in = pl_orig.points[i];
+    PointType pt;
+    pt.x = in.x;
+    pt.y = in.y;
+    pt.z = in.z;
+    pt.intensity = in.intensity;
+    pt.curvature = in.timestamp - t_first;
+
+    if (((i % point_filter_num) == 0) && ((pt.x * pt.x + pt.y * pt.y) > blind))
+    {
+      pl_full.push_back(pt);
+    }
+  }
+  return t_first;
 }
 
 void LidarPointCloudDecoder::tartanair_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
