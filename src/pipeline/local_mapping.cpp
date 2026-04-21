@@ -467,8 +467,8 @@ void VINA_SLAM::thd_odometry_localmapping()
             kv.second->collect_normal_markers(voxel_normal, max_layer, voxel_normal_ids);
           }
         }
-        pub_voxel_plane->publish(voxel_plane);
-        pub_voxel_normal->publish(voxel_normal);
+        pub_voxel_plane.publish(voxel_plane);
+        pub_voxel_normal.publish(voxel_normal);
       }
 
       auto x_temp = x_curr;

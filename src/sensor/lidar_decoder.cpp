@@ -42,5 +42,15 @@ void pcl_handler(const T& msg)
   mBuf.unlock();
 }
 
+void pcl_handler_livox(const livox_ros_driver::CustomMsg::ConstPtr& msg)
+{
+  pcl_handler(msg);
+}
+
+void pcl_handler_standard(const sensor_msgs::PointCloud2::ConstPtr& msg)
+{
+  pcl_handler(msg);
+}
+
 template void pcl_handler<livox_ros_driver::CustomMsg::ConstPtr>(const livox_ros_driver::CustomMsg::ConstPtr& msg);
 template void pcl_handler<sensor_msgs::PointCloud2::ConstPtr>(const sensor_msgs::PointCloud2::ConstPtr& msg);

@@ -101,13 +101,11 @@ VINA_SLAM::VINA_SLAM(const ros::NodeHandle& nh_in, const ros::NodeHandle& pnh_in
 
   if (feat.lidar_type == LIVOX)
   {
-    sub_pcl_livox = nh.subscribe<livox_ros_driver::CustomMsg>(
-        lid_topic, 1000, [](const livox_ros_driver::CustomMsg::ConstPtr& msg) { pcl_handler(msg); });
+    sub_pcl_livox = nh.subscribe<livox_ros_driver::CustomMsg>(lid_topic, 1000, pcl_handler_livox);
   }
   else
   {
-    sub_pcl_standard = nh.subscribe<sensor_msgs::PointCloud2>(
-        lid_topic, 1000, [](const sensor_msgs::PointCloud2::ConstPtr& msg) { pcl_handler(msg); });
+    sub_pcl_standard = nh.subscribe<sensor_msgs::PointCloud2>(lid_topic, 1000, pcl_handler_standard);
   }
   odom_ekf.imu_topic = imu_topic;
 
