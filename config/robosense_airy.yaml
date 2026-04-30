@@ -2,14 +2,14 @@ finish: false
 # ---------- General ----------
 General:
   lid_topic: "/rslidar_points"
-  imu_topic: "/imu"
+  imu_topic: "/rslidar_imu_data"
 
   save_path: "/home/yang/Code/vina_slam_ws/key_frame_map/"
   bagname: "robosense_airy"
   # LiDAR type: 0=Livox Mid360, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy
   lidar_type: 6
   # Blind zone radius (m), points within this range are ignored
-  blind: 2.0
+  blind: 0.7
   # Take every N-th point for raw point cloud sparsification
   point_filter_num: 1
 

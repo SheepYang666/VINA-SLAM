@@ -7,6 +7,6 @@
   </node>
 
   <node pkg="rviz" type="rviz" name="rviz" output="screen"
-        args="-d $(find vina_slam)/rviz_cfg/rviz_cfg.rviz"
-        if="$(arg launch_rviz)" />
+    args="-d $(find vina_slam)/rviz_cfg/rviz_cfg.rviz"
+    if="$(arg launch_rviz)" />
 </launch>
