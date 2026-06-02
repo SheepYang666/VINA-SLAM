@@ -15,7 +15,7 @@ vina_slam:
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
-    # LiDAR type: AIRY
+      # LiDAR type: AIRY
       # LiDAR-to-IMU extrinsic: translation [x, y, z] (m)
       extrinsic_tran: [0.00425, 0.00418, -0.00446]
       # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
@@ -35,7 +35,7 @@ vina_slam:
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
       enable_visualization: 1
       # Max octree layer shown in voxel plane/normal visualization (0=root only)
-      visualization_max_layer: 0
+      visualization_max_layer: 1
       # Max voxel plane/normal visualization publish rate in Hz; <=0 publishes every checked frame
       visualization_publish_hz: 5.0
 
