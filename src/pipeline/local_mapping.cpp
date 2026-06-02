@@ -258,7 +258,7 @@ void VINA_SLAM::multi_recut(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, int w
 void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
 {
   PLV(3) pwld;
-  double down_sizes[3] = { 0.1, 0.2, 0.4 };
+  double down_sizes[3] = { 0.1, 0.1, 0.1 };
   Eigen::Vector3d last_pos(0, 0, 0);
   double jour = 0.0;
   int counter = 0;
@@ -405,12 +405,12 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr pptr(new PVec);
       var_init(extrin_para, pl_down, pptr, dept_err, beam_err);
 
-      auto pcl_curr_temp = *pcl_curr;
-      PVecPtr no_ds_pptr(new PVec);
-      var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
+      // auto pcl_curr_temp = *pcl_curr;
+      // PVecPtr no_ds_pptr(new PVec);
+      // var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      // if (lio_state_estimation(pptr))
-      if (VNC_lio(no_ds_pptr))
+      if (lio_state_estimation(pptr))
+      // if (VNC_lio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {

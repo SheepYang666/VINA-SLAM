@@ -11,7 +11,8 @@ def generate_launch_description() -> LaunchDescription:
     config_arg = DeclareLaunchArgument(
         'vina_config',
         # default_value='mid360.yaml',
-        default_value='velodyne.yaml',
+        # default_value='velodyne.yaml',
+        default_value='robosense_airy.yaml',
         description='VINA-SLAM config file name'
     )
 
