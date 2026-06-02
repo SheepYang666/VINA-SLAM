@@ -99,6 +99,13 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   enable_visualization = node->declare_parameter<int>("General.enable_visualization", 0);
   node->get_parameter("General.enable_visualization", enable_visualization);
 
+  visualization_max_layer = node->declare_parameter<int>("General.visualization_max_layer", -1);
+  node->get_parameter("General.visualization_max_layer", visualization_max_layer);
+
+  visualization_publish_hz =
+      node->declare_parameter<double>("General.visualization_publish_hz", 10.0);
+  node->get_parameter("General.visualization_publish_hz", visualization_publish_hz);
+
   // ######################################## print log ########################################
 
   if (is_save_map == 0)
@@ -420,8 +427,13 @@ int main(int argc, char** argv)
 
   pub_scan = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_scan", 100);
   pub_curr_path = node->create_publisher<sensor_msgs::msg::PointCloud2>("/map_path", 100);
-  pub_voxel_plane = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_plane", 10);
-  pub_voxel_normal = node->create_publisher<visualization_msgs::msg::MarkerArray>("/voxel_normal", 10);
+  using MarkerArray = visualization_msgs::msg::MarkerArray;
+  auto voxel_marker_qos = rclcpp::QoS(rclcpp::KeepLast(1));
+  voxel_marker_qos.best_effort().durability_volatile();
+  pub_voxel_plane =
+      node->create_publisher<MarkerArray>("/voxel_plane", voxel_marker_qos);
+  pub_voxel_normal =
+      node->create_publisher<MarkerArray>("/voxel_normal", voxel_marker_qos);
 
   ResultOutput::instance(node);
   FileReaderWriter::instance(node);

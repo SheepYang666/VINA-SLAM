@@ -11,7 +11,7 @@ vina_slam:
       # LiDAR type: 0=Livox Mid360, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy
       lidar_type: 6
       # Blind zone radius (m), points within this range are ignored
-      blind: 0.7
+      blind: 1.5
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
@@ -33,7 +33,11 @@ vina_slam:
       # Voxel downsample size (m) when saving the global map
       full_map_voxel_size: 0.05
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
-      enable_visualization: 0
+      enable_visualization: 1
+      # Max octree layer shown in voxel plane/normal visualization (0=root only)
+      visualization_max_layer: 0
+      # Max voxel plane/normal visualization publish rate in Hz; <=0 publishes every checked frame
+      visualization_publish_hz: 5.0
 
     # ---------- Odometry ----------
     Odometry:

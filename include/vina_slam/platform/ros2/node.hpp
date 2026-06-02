@@ -54,6 +54,8 @@ public:
   int is_save_map;
   int if_BA;
   int enable_visualization = 0;
+  int visualization_max_layer = -1;
+  double visualization_publish_hz = 10.0;
   int is_save_pose = 0;
   std::string pose_save_path;
   std::string pose_filename;

@@ -2,9 +2,12 @@
 #include "vina_slam/mapping/keyframe.hpp"
 #include "vina_slam/mapping/plane.hpp"
 #include "vina_slam/mapping/slide_window.hpp"
+#include <algorithm>
+#include <cmath>
 #include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 #include <cstdio>
+#include <utility>
 
 namespace
 {
@@ -60,6 +63,50 @@ void map_jet(double v, double vmin, double vmax, uint8_t& r, uint8_t& g, uint8_t
   r = static_cast<uint8_t>(255 * dr);
   g = static_cast<uint8_t>(255 * dg);
   b = static_cast<uint8_t>(255 * db);
+}
+
+visualization_msgs::msg::Marker hidden_plane_marker(int id, const double center[3])
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = "camera_init";
+  marker.ns = "plane";
+  marker.id = id;
+  marker.type = visualization_msgs::msg::Marker::CYLINDER;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+  marker.pose.position.x = center[0];
+  marker.pose.position.y = center[1];
+  marker.pose.position.z = center[2];
+  marker.pose.orientation.w = 1.0;
+  marker.scale.x = 1e-3;
+  marker.scale.y = 1e-3;
+  marker.scale.z = 1e-3;
+  marker.color.a = 0.0f;
+  return marker;
+}
+
+visualization_msgs::msg::Marker hidden_normal_marker(
+    int id, const double center[3], double quater_length)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = "camera_init";
+  marker.ns = "normal";
+  marker.id = id;
+  marker.type = visualization_msgs::msg::Marker::ARROW;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+
+  const double length = std::max(2.0 * quater_length, 1e-3);
+  marker.points.resize(2);
+  marker.points[0].x = center[0];
+  marker.points[0].y = center[1];
+  marker.points[0].z = center[2];
+  marker.points[1].x = center[0];
+  marker.points[1].y = center[1];
+  marker.points[1].z = center[2] + length;
+  marker.scale.x = 0.1 * length;
+  marker.scale.y = 0.2 * length;
+  marker.scale.z = 0.0;
+  marker.color.a = 0.0f;
+  return marker;
 }
 }  // namespace
 
@@ -768,18 +815,13 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
       const int id = voxel_id_from_center(voxel_center, layer);
       if (used_ids.insert(id).second)
       {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "camera_init";
-        marker.ns = "plane";
-        marker.id = id;
-        marker.action = visualization_msgs::msg::Marker::DELETE;
-        out.markers.push_back(marker);
+        out.markers.emplace_back(hidden_plane_marker(id, voxel_center));
       }
       plane.is_published = false;
       plane.is_update = false;
     }
 
-    if (plane.is_plane && plane.is_update)
+    if (plane.is_plane && (plane.is_update || plane.is_published))
     {
       const int id = voxel_id_from_center(voxel_center, layer);
       if (!used_ids.insert(id).second)
@@ -823,7 +865,7 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
       marker.color.g = g / 255.0f;
       marker.color.b = b / 255.0f;
 
-      out.markers.push_back(marker);
+      out.markers.emplace_back(std::move(marker));
       plane.is_update = false;
       plane.is_published = true;
     }
@@ -834,12 +876,7 @@ void OctoTree::collect_plane_markers(visualization_msgs::msg::MarkerArray& out, 
     const int id = voxel_id_from_center(voxel_center, layer);
     if (used_ids.insert(id).second)
     {
-      visualization_msgs::msg::Marker marker;
-      marker.header.frame_id = "camera_init";
-      marker.ns = "plane";
-      marker.id = id;
-      marker.action = visualization_msgs::msg::Marker::DELETE;
-      out.markers.push_back(marker);
+      out.markers.emplace_back(hidden_plane_marker(id, voxel_center));
     }
     plane.is_published = false;
     plane.is_update = false;
@@ -863,18 +900,13 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
       const int id = voxel_id_from_center(voxel_center, layer);
       if (used_ids.insert(id).second)
       {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = "camera_init";
-        marker.ns = "normal";
-        marker.id = id;
-        marker.action = visualization_msgs::msg::Marker::DELETE;
-        out.markers.push_back(marker);
+        out.markers.emplace_back(hidden_normal_marker(id, voxel_center, quater_length));
       }
       plane.is_normal_published = false;
       plane.is_normal_update = false;
     }
 
-    if (plane.is_plane && plane.is_normal_update)
+    if (plane.is_plane && (plane.is_normal_update || plane.is_normal_published))
     {
       const int id = voxel_id_from_center(voxel_center, layer);
       if (!used_ids.insert(id).second)
@@ -898,19 +930,14 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
       marker.action = visualization_msgs::msg::Marker::ADD;
 
       const double length = 2.0 * quater_length;
-      geometry_msgs::msg::Point p0;
-      p0.x = plane.center[0];
-      p0.y = plane.center[1];
-      p0.z = plane.center[2];
-
       const Eigen::Vector3d n = plane.normal.normalized();
-      geometry_msgs::msg::Point p1;
-      p1.x = plane.center[0] + n[0] * length;
-      p1.y = plane.center[1] + n[1] * length;
-      p1.z = plane.center[2] + n[2] * length;
-
-      marker.points.push_back(p0);
-      marker.points.push_back(p1);
+      marker.points.resize(2);
+      marker.points[0].x = plane.center[0];
+      marker.points[0].y = plane.center[1];
+      marker.points[0].z = plane.center[2];
+      marker.points[1].x = plane.center[0] + n[0] * length;
+      marker.points[1].y = plane.center[1] + n[1] * length;
+      marker.points[1].z = plane.center[2] + n[2] * length;
 
       marker.scale.x = 0.1 * length;
       marker.scale.y = 0.2 * length;
@@ -921,7 +948,7 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
       marker.color.g = g / 255.0f;
       marker.color.b = b / 255.0f;
 
-      out.markers.push_back(marker);
+      out.markers.emplace_back(std::move(marker));
       plane.is_normal_update = false;
       plane.is_normal_published = true;
     }
@@ -932,12 +959,7 @@ void OctoTree::collect_normal_markers(visualization_msgs::msg::MarkerArray& out,
     const int id = voxel_id_from_center(voxel_center, layer);
     if (used_ids.insert(id).second)
     {
-      visualization_msgs::msg::Marker marker;
-      marker.header.frame_id = "camera_init";
-      marker.ns = "normal";
-      marker.id = id;
-      marker.action = visualization_msgs::msg::Marker::DELETE;
-      out.markers.push_back(marker);
+      out.markers.emplace_back(hidden_normal_marker(id, voxel_center, quater_length));
     }
     plane.is_normal_published = false;
     plane.is_normal_update = false;
