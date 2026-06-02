@@ -43,6 +43,10 @@ General:
   full_map_voxel_size: 0.05
   # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
   enable_visualization: 0
+  # Max octree layer shown in voxel plane/normal visualization (0=root only)
+  visualization_max_layer: 2
+  # Max voxel plane/normal visualization publish rate in Hz; <=0 publishes every checked frame
+  visualization_publish_hz: 10.0
 
 # ---------- Odometry ----------
 Odometry:

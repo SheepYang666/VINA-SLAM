@@ -10,9 +10,16 @@
 #include "vina_slam/mapping/voxel_map.hpp"
 #include "vina_slam/sensor/sync.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <malloc.h>
 #include <thread>
 #include <unistd.h>
+
+namespace
+{
+constexpr std::size_t kDefaultVoxelMarkerReserve = 1024;
+}
 
 void VINA_SLAM::multi_margi(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, double jour, int win_count,
                             vector<IMUST>& xs, LidarFactor& voxopt, vector<SlideWindow*>& sw)
@@ -278,6 +285,10 @@ void VINA_SLAM::thd_odometry_localmapping()
   const int mgsize = 1;
   Eigen::MatrixXd hess;
   static IMUST x_last;
+  bool has_visualization_publish_time = false;
+  double last_visualization_publish_time = 0.0;
+  std::size_t last_voxel_plane_marker_count = kDefaultVoxelMarkerReserve;
+  std::size_t last_voxel_normal_marker_count = kDefaultVoxelMarkerReserve;
 
   if (is_save_pose == 1)
   {
@@ -455,20 +466,71 @@ void VINA_SLAM::thd_odometry_localmapping()
       // Publish voxel plane and normal markers if visualization is enabled
       if (enable_visualization)
       {
-        visualization_msgs::MarkerArray voxel_plane;
-        visualization_msgs::MarkerArray voxel_normal;
-        std::unordered_set<int> voxel_plane_ids;
-        std::unordered_set<int> voxel_normal_ids;
-        for (auto& kv : surf_map_slide)
+        const bool publish_plane = pub_voxel_plane.getNumSubscribers() > 0;
+        const bool publish_normal = pub_voxel_normal.getNumSubscribers() > 0;
+
+        if (publish_plane || publish_normal)
         {
-          if (kv.second)
+          const double now = ros::Time::now().toSec();
+          const bool should_publish =
+              !has_visualization_publish_time || visualization_publish_hz <= 0.0 ||
+              now - last_visualization_publish_time >= 1.0 / visualization_publish_hz;
+
+          if (should_publish)
           {
-            kv.second->collect_plane_markers(voxel_plane, max_layer, voxel_plane_ids);
-            kv.second->collect_normal_markers(voxel_normal, max_layer, voxel_normal_ids);
+            visualization_msgs::MarkerArray voxel_plane;
+            visualization_msgs::MarkerArray voxel_normal;
+            std::unordered_set<int> voxel_plane_ids;
+            std::unordered_set<int> voxel_normal_ids;
+
+            if (publish_plane)
+            {
+              const std::size_t reserve_count =
+                  std::max(kDefaultVoxelMarkerReserve, last_voxel_plane_marker_count);
+              voxel_plane.markers.reserve(reserve_count);
+              voxel_plane_ids.reserve(reserve_count);
+            }
+
+            if (publish_normal)
+            {
+              const std::size_t reserve_count =
+                  std::max(kDefaultVoxelMarkerReserve, last_voxel_normal_marker_count);
+              voxel_normal.markers.reserve(reserve_count);
+              voxel_normal_ids.reserve(reserve_count);
+            }
+
+            const int marker_max_layer =
+                visualization_max_layer >= 0 ? visualization_max_layer : max_layer;
+            for (auto& kv : surf_map_slide)
+            {
+              if (kv.second)
+              {
+                if (publish_plane)
+                  kv.second->collect_plane_markers(voxel_plane, marker_max_layer, voxel_plane_ids);
+                if (publish_normal)
+                  kv.second->collect_normal_markers(
+                      voxel_normal, marker_max_layer, voxel_normal_ids);
+              }
+            }
+
+            if (publish_plane)
+            {
+              last_voxel_plane_marker_count =
+                  std::max(kDefaultVoxelMarkerReserve, voxel_plane.markers.size());
+              pub_voxel_plane.publish(voxel_plane);
+            }
+
+            if (publish_normal)
+            {
+              last_voxel_normal_marker_count =
+                  std::max(kDefaultVoxelMarkerReserve, voxel_normal.markers.size());
+              pub_voxel_normal.publish(voxel_normal);
+            }
+
+            last_visualization_publish_time = now;
+            has_visualization_publish_time = true;
           }
         }
-        pub_voxel_plane.publish(voxel_plane);
-        pub_voxel_normal.publish(voxel_normal);
       }
 
       auto x_temp = x_curr;

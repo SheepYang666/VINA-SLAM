@@ -57,6 +57,8 @@ VINA_SLAM::VINA_SLAM(const ros::NodeHandle& nh_in, const ros::NodeHandle& pnh_in
   pose_filename = get_param_or(pnh, "General/pose_filename", std::string("trajectory.txt"));
   if_BA = get_param_or(pnh, "General/if_BA", 0);
   enable_visualization = get_param_or(pnh, "General/enable_visualization", 0);
+  visualization_max_layer = get_param_or(pnh, "General/visualization_max_layer", -1);
+  visualization_publish_hz = get_param_or(pnh, "General/visualization_publish_hz", 10.0);
 
   if (is_save_map == 0)
   {
@@ -304,8 +306,8 @@ int main(int argc, char** argv)
   pub_cmap = nh.advertise<sensor_msgs::PointCloud2>("/map_cmap", 100);
   pub_scan = nh.advertise<sensor_msgs::PointCloud2>("/map_scan", 100);
   pub_curr_path = nh.advertise<sensor_msgs::PointCloud2>("/map_path", 100);
-  pub_voxel_plane = nh.advertise<visualization_msgs::MarkerArray>("/voxel_plane", 10);
-  pub_voxel_normal = nh.advertise<visualization_msgs::MarkerArray>("/voxel_normal", 10);
+  pub_voxel_plane = nh.advertise<visualization_msgs::MarkerArray>("/voxel_plane", 1);
+  pub_voxel_normal = nh.advertise<visualization_msgs::MarkerArray>("/voxel_normal", 1);
 
   ResultOutput::instance();
   FileReaderWriter::instance();
