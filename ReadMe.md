@@ -9,6 +9,10 @@ Then, a tangent-space metric is further proposed to explicitly supplement rotati
 
 Finally, we formulate a sliding-window bundle adjustment module that tightly couples IMU factors, normal consistency factors, and planar constraints. A key component is the use of the minimum eigenvalue of each voxel's covariance, as a statistically principled planar factor that improves the Hessian condition number and enhances cross-view geometric consistency.
 
+![Fig3](./docs/pics/Fig3.gif)
+
+![Fig3](./docs/pics/Fig4.gif)
+
 ![](./docs/pics/Fig1.png)
 
 ![](./docs/pics/Fig2.png)
@@ -20,17 +24,6 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 launch vina_slam start.launch.py
 ```
-
-## ROS 2 Outputs
-
-- Live pose is published as TF: `camera_init -> aft_mapped`
-- Current accumulated trajectory is published on `/curr_path` as `sensor_msgs/msg/PointCloud2`
-- Registered scan is published on `/cloud_registered`
-- Global map is published on `/global_map`
-- Local map is published on `/cloud_map`
-
-`/aft_mapped_to_init` is reserved for odometry output, but the current runtime path visualization relies on TF
-and `/curr_path`.
 
 ## RViz Trajectory Display
 
