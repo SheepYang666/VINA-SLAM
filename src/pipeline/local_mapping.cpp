@@ -1,6 +1,7 @@
 // Local mapping methods of VINA_SLAM class
 // Moved from VINASlam.cpp: multi_margi(), multi_recut() (3 overloads), thd_odometry_localmapping()
 
+#include "vina_slam/core/constants.hpp"
 #include "vina_slam/platform/ros2/node.hpp"
 #include "vina_slam/platform/ros2/publishers.hpp"
 #include "vina_slam/platform/ros2/io.hpp"
@@ -416,21 +417,22 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr pptr(new PVec);
       var_init(extrin_para, pl_down, pptr, dept_err, beam_err);
 
-      // auto pcl_curr_temp = *pcl_curr;
-      // PVecPtr no_ds_pptr(new PVec);
-      // var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
+      auto pcl_curr_temp = *pcl_curr;
+      PVecPtr no_ds_pptr(new PVec);
+      var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
 
-      if (lio_state_estimation(pptr))
-      // if (VNC_lio(no_ds_pptr))
+      // if (lio_state_estimation(pptr))
+      if (VNC_lio(no_ds_pptr))
       {
         if (degrade_cnt > 0)
         {
           degrade_cnt--;
+          std::cout << RED << "degrade\n";
         }
       }
       else
       {
-        degrade_cnt++;
+        // degrade_cnt++;
       }
 
       pwld.clear();
@@ -465,17 +467,14 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       // Publish voxel plane and normal markers if visualization is enabled
       if (enable_visualization && (pub_voxel_plane || pub_voxel_normal))
       {
-        const bool publish_plane =
-            pub_voxel_plane && pub_voxel_plane->get_subscription_count() > 0;
-        const bool publish_normal =
-            pub_voxel_normal && pub_voxel_normal->get_subscription_count() > 0;
+        const bool publish_plane = pub_voxel_plane && pub_voxel_plane->get_subscription_count() > 0;
+        const bool publish_normal = pub_voxel_normal && pub_voxel_normal->get_subscription_count() > 0;
 
         if (publish_plane || publish_normal)
         {
           const double now = node->now().seconds();
-          const bool should_publish =
-              !has_visualization_publish_time || visualization_publish_hz <= 0.0 ||
-              now - last_visualization_publish_time >= 1.0 / visualization_publish_hz;
+          const bool should_publish = !has_visualization_publish_time || visualization_publish_hz <= 0.0 ||
+                                      now - last_visualization_publish_time >= 1.0 / visualization_publish_hz;
 
           if (should_publish)
           {
@@ -486,22 +485,19 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
 
             if (publish_plane)
             {
-              const std::size_t reserve_count =
-                  std::max(kDefaultVoxelMarkerReserve, last_voxel_plane_marker_count);
+              const std::size_t reserve_count = std::max(kDefaultVoxelMarkerReserve, last_voxel_plane_marker_count);
               voxel_plane.markers.reserve(reserve_count);
               voxel_plane_ids.reserve(reserve_count);
             }
 
             if (publish_normal)
             {
-              const std::size_t reserve_count =
-                  std::max(kDefaultVoxelMarkerReserve, last_voxel_normal_marker_count);
+              const std::size_t reserve_count = std::max(kDefaultVoxelMarkerReserve, last_voxel_normal_marker_count);
               voxel_normal.markers.reserve(reserve_count);
               voxel_normal_ids.reserve(reserve_count);
             }
 
-            const int marker_max_layer =
-                visualization_max_layer >= 0 ? visualization_max_layer : max_layer;
+            const int marker_max_layer = visualization_max_layer >= 0 ? visualization_max_layer : max_layer;
             for (auto& kv : surf_map_slide)
             {
               if (kv.second)
@@ -509,22 +505,19 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
                 if (publish_plane)
                   kv.second->collect_plane_markers(voxel_plane, marker_max_layer, voxel_plane_ids);
                 if (publish_normal)
-                  kv.second->collect_normal_markers(
-                      voxel_normal, marker_max_layer, voxel_normal_ids);
+                  kv.second->collect_normal_markers(voxel_normal, marker_max_layer, voxel_normal_ids);
               }
             }
 
             if (publish_plane)
             {
-              last_voxel_plane_marker_count =
-                  std::max(kDefaultVoxelMarkerReserve, voxel_plane.markers.size());
+              last_voxel_plane_marker_count = std::max(kDefaultVoxelMarkerReserve, voxel_plane.markers.size());
               pub_voxel_plane->publish(voxel_plane);
             }
 
             if (publish_normal)
             {
-              last_voxel_normal_marker_count =
-                  std::max(kDefaultVoxelMarkerReserve, voxel_normal.markers.size());
+              last_voxel_normal_marker_count = std::max(kDefaultVoxelMarkerReserve, voxel_normal.markers.size());
               pub_voxel_normal->publish(voxel_normal);
             }
 

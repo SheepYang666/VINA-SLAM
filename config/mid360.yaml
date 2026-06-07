@@ -12,7 +12,7 @@ vina_slam:
       # 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
       lidar_type: 7
       # Blind zone radius (m); the node squares this value before decoder distance checks
-      blind: 3.0
+      blind: 0.0
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
@@ -34,7 +34,7 @@ vina_slam:
       # Voxel downsample size (m) when saving the global map
       full_map_voxel_size: 0.1
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
-      enable_visualization: 1
+      enable_visualization: 0
       # Max octree layer shown in voxel plane/normal visualization (0=root only)
       visualization_max_layer: 2
       # Max voxel plane/normal visualization publish rate in Hz; <=0 publishes every checked frame
