@@ -1,0 +1,1 @@
+This ROS1/Noetic worktree is ignored by colcon so the workspace builds the main ROS2 worktree only.

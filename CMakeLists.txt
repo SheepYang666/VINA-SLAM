@@ -116,6 +116,28 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # ===============================
+# Tests
+# ===============================
+if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(lidar_mid360_pointcloud_decoder_test
+    test/lidar_mid360_pointcloud_decoder_test.cpp
+    src/sensor/lidar_pointcloud_decoder.cpp
+  )
+  if(TARGET lidar_mid360_pointcloud_decoder_test)
+    target_include_directories(lidar_mid360_pointcloud_decoder_test PRIVATE
+      include
+      ${catkin_INCLUDE_DIRS}
+      ${EIGEN3_INCLUDE_DIRS}
+      ${PCL_INCLUDE_DIRS}
+    )
+    target_link_libraries(lidar_mid360_pointcloud_decoder_test
+      ${catkin_LIBRARIES}
+      ${PCL_LIBRARIES}
+    )
+  endif()
+endif()
+
+# ===============================
 # Install Rules
 # ===============================
 install(TARGETS ${PROJECT_NAME}

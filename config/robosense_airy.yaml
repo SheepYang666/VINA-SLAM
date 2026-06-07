@@ -6,7 +6,7 @@ General:
 
   save_path: "/home/yang/Code/vina_slam_ws/key_frame_map/"
   bagname: "robosense_airy"
-  # LiDAR type: 0=Livox Mid360, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy
+  # LiDAR type: 0=Livox CustomMsg, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
   lidar_type: 6
   # Blind zone radius (m), points within this range are ignored
   blind: 0.7

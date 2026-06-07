@@ -47,6 +47,9 @@ double LidarPointCloudDecoder::process(const sensor_msgs::PointCloud2::ConstPtr&
     case ROBOSENSE_AIRY:
       t0 = robosense_airy_handler(msg, pl_full);
       break;
+    case LIVOX_MID360_POINTCLOUD2:
+      mid360_handler(msg, pl_full);
+      break;
     case TARTANAIR:
       tartanair_handler(msg, pl_full);
       break;
@@ -74,6 +77,52 @@ void LidarPointCloudDecoder::livox_handler(const livox_ros_driver::CustomMsg::Co
     {
       pl_full.push_back(pt);
     }
+  }
+}
+
+void LidarPointCloudDecoder::mid360_handler(const sensor_msgs::PointCloud2::ConstPtr& msg,
+                                            pcl::PointCloud<PointType>& pl_full)
+{
+  pcl::PointCloud<livox_ros::Point> pl_orig;
+  pcl::fromROSMsg(*msg, pl_orig);
+  if (pl_orig.empty())
+  {
+    return;
+  }
+
+  const size_t point_count = pl_orig.points.size();
+  const size_t stride = point_filter_num > 0 ? static_cast<size_t>(point_filter_num) : 1U;
+  const double timebase_ns = pl_orig.points.front().timestamp;
+  pl_full.reserve(pl_full.size() + point_count / stride + 1U);
+
+  for (size_t i = 1; i < point_count; ++i)
+  {
+    const auto& in = pl_orig.points[i];
+    const std::uint8_t return_type = in.tag & 0x30;
+    if ((return_type != 0x10 && return_type != 0x00) || (i % stride) != 0U)
+    {
+      continue;
+    }
+
+    const auto& prev = pl_orig.points[i - 1];
+    const bool is_duplicate =
+        std::abs(in.x - prev.x) <= 1e-7F && std::abs(in.y - prev.y) <= 1e-7F && std::abs(in.z - prev.z) <= 1e-7F;
+    const double dist_sq =
+        static_cast<double>(in.x) * in.x + static_cast<double>(in.y) * in.y + static_cast<double>(in.z) * in.z;
+    if (is_duplicate || dist_sq <= blind)
+    {
+      continue;
+    }
+
+    PointType pt;
+    pt.x = in.x;
+    pt.y = in.y;
+    pt.z = in.z;
+    pt.intensity = in.intensity;
+    // MID360 PointCloud2 timestamps are nanoseconds; curvature stores seconds
+    // from scan start.
+    pt.curvature = static_cast<float>((in.timestamp - timebase_ns) * 1e-9);
+    pl_full.push_back(pt);
   }
 }
 
