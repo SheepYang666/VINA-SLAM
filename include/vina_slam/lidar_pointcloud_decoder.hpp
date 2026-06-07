@@ -24,13 +24,14 @@ using PointType = pcl::PointXYZINormal;
 
 enum LID_TYPE
 {
-  LIVOX,
+  LIVOX,  ///< Livox CustomMsg
   VELODYNE,
   OUSTER,
   HESAI,      ///< HesaiXT32
   ROBOSENSE,  ///< Robosense
   TARTANAIR,  ///< TartanAir （No intensity / time）
-  ROBOSENSE_AIRY  ///< RoboSense Airy
+  ROBOSENSE_AIRY,  ///< RoboSense Airy
+  LIVOX_MID360_POINTCLOUD2  ///< Livox MID360 PointCloud2: x/y/z/intensity/tag/timestamp
 };
 
 struct LivoxPoint
@@ -61,6 +62,21 @@ struct EIGEN_ALIGN16 Point
 POINT_CLOUD_REGISTER_POINT_STRUCT(velodyne_ros::Point,
                                   (float, x, x)(float, y, y)(float, z, z)(float, time, time)(std::uint16_t, ring,
                                                                                              ring));
+
+namespace livox_ros
+{
+struct EIGEN_ALIGN16 Point
+{
+  PCL_ADD_POINT4D;
+  float intensity;
+  std::uint8_t tag;
+  double timestamp;
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+}  // namespace livox_ros
+POINT_CLOUD_REGISTER_POINT_STRUCT(livox_ros::Point,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(
+                                      std::uint8_t, tag, tag)(double, timestamp, timestamp));
 
 namespace ouster_ros
 {
@@ -137,6 +153,8 @@ public:
 private:
   void livox_handler(const livox_ros_driver2::msg::CustomMsg::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
   // void livox_handler(const livox_ros_driver::msg::CustomMsg::SharedPtr &msg, pcl::PointCloud<PointType> &pl_full);
+
+  void mid360_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
 
   void velodyne_handler(const sensor_msgs::msg::PointCloud2::SharedPtr& msg, pcl::PointCloud<PointType>& pl_full);
 

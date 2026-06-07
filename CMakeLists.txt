@@ -144,7 +144,30 @@ install(DIRECTORY
 # Tests
 # ===============================
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+
+  ament_add_gtest(lidar_mid360_pointcloud_decoder_test
+    test/lidar_mid360_pointcloud_decoder_test.cpp
+    src/sensor/lidar_pointcloud_decoder.cpp
+  )
+  if(TARGET lidar_mid360_pointcloud_decoder_test)
+    target_include_directories(lidar_mid360_pointcloud_decoder_test PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      ${EIGEN3_INCLUDE_DIRS}
+      ${PCL_INCLUDE_DIRS}
+    )
+    ament_target_dependencies(lidar_mid360_pointcloud_decoder_test
+      rclcpp
+      sensor_msgs
+      pcl_conversions
+      livox_ros_driver2
+    )
+    target_link_libraries(lidar_mid360_pointcloud_decoder_test
+      ${PCL_LIBRARIES}
+    )
+  endif()
+
   ament_lint_auto_find_test_dependencies()
 endif()
 
