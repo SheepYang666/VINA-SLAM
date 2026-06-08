@@ -93,6 +93,18 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   pose_filename = node->declare_parameter<std::string>("General.pose_filename", "trajectory.txt");
   node->get_parameter("General.pose_filename", pose_filename);
 
+  debug_enable_z_drift_log = node->declare_parameter<bool>("Debug.enable_z_drift_log", false);
+  node->get_parameter("Debug.enable_z_drift_log", debug_enable_z_drift_log);
+
+  debug_run_label = node->declare_parameter<std::string>("Debug.run_label", "");
+  node->get_parameter("Debug.run_label", debug_run_label);
+
+  debug_log_root = node->declare_parameter<std::string>("Debug.log_root", "");
+  node->get_parameter("Debug.log_root", debug_log_root);
+
+  debug_fail_on_frontend_degenerate = node->declare_parameter<bool>("Debug.fail_on_frontend_degenerate", false);
+  node->get_parameter("Debug.fail_on_frontend_degenerate", debug_fail_on_frontend_degenerate);
+
   if_BA = node->declare_parameter<int>("General.if_BA", false);
   node->get_parameter("General.if_BA", if_BA);
 
@@ -145,6 +157,11 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   else
   {
     std::cout << RED << "[is_save_pose]: ERROR STATE " << RESET << std::endl;
+  }
+
+  if (debug_enable_z_drift_log)
+  {
+    std::cout << GREEN << "[Debug.z_drift_log]: enabled" << RESET << std::endl;
   }
 
   // ######################################## print log ########################################

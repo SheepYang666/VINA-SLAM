@@ -66,6 +66,14 @@ struct TopicConfig
   std::string imu_topic = "/imu";
 };
 
+struct DebugConfig
+{
+  bool enable_z_drift_log = false;
+  std::string run_label;
+  std::string log_root = "/tmp/vina_slam_z_drift";
+  bool fail_on_frontend_degenerate = false;
+};
+
 struct SystemConfig
 {
   VoxelMapConfig voxel;
@@ -75,6 +83,7 @@ struct SystemConfig
   ExtrinsicConfig extrinsic;
   PipelineConfig pipeline;
   TopicConfig topics;
+  DebugConfig debug;
   std::string bagname = "noNameBag";
   std::string savepath;
 };

@@ -1,5 +1,6 @@
 #include "vina_slam/mapping/optimizers.hpp"
 #include "vina_slam/core/math.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <rclcpp/clock.hpp>
@@ -593,14 +594,15 @@ void LI_BA_Optimizer::damping_iter(std::vector<IMUST>& x_stats, LidarFactor& lid
   }
 }
 
-void LI_BA_Optimizer::print_breakdown(const char* tag, std::vector<IMUST>& xs, LidarFactor& lidar, NormalFactor& normal,
-                                      std::deque<IMU_PRE*>& imus, double& imu_res, double& lidar_res,
-                                      double& normal_res, double& total_res) const
+void LI_BA_Optimizer::evaluate_breakdown(std::vector<IMUST>& xs, LidarFactor lidar, NormalFactor normal,
+                                         std::deque<IMU_PRE*>& imus, double& imu_res, double& lidar_res,
+                                         double& normal_res, double& total_res) const
 {
   double e_imu = 0.0;
   Eigen::MatrixXd jtj(2 * DIM, 2 * DIM);
   Eigen::VectorXd gg(2 * DIM);
-  for (int i = 0; i < (int)xs.size() - 1; ++i)
+  const int imu_factor_count = std::min<int>(std::max<int>((int)xs.size() - 1, 0), (int)imus.size());
+  for (int i = 0; i < imu_factor_count; ++i)
   {
     jtj.setZero();
     gg.setZero();
@@ -615,13 +617,20 @@ void LI_BA_Optimizer::print_breakdown(const char* tag, std::vector<IMUST>& xs, L
   normal.evaluate_only_residual(xs, 0, (int)normal.plvec_voxels.size(), e_normal);
 
   const double e_total = e_imu + e_lidar + e_normal;
-  std::printf("[BA][%s]  E_imu=%.6f   E_lidar=%.6f   E_normal=%.6f   |  Total=%.6f\n", tag, e_imu, e_lidar, e_normal,
-              e_total);
 
   imu_res = e_imu;
   lidar_res = e_lidar;
   normal_res = e_normal;
   total_res = e_total;
+}
+
+void LI_BA_Optimizer::print_breakdown(const char* tag, std::vector<IMUST>& xs, LidarFactor lidar, NormalFactor normal,
+                                      std::deque<IMU_PRE*>& imus, double& imu_res, double& lidar_res,
+                                      double& normal_res, double& total_res) const
+{
+  evaluate_breakdown(xs, lidar, normal, imus, imu_res, lidar_res, normal_res, total_res);
+  std::printf("[BA][%s]  E_imu=%.6f   E_lidar=%.6f   E_normal=%.6f   |  Total=%.6f\n", tag, imu_res, lidar_res,
+              normal_res, total_res);
 }
 
 // The LiDAR-Inertial BA optimizer with gravity optimization

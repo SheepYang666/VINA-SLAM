@@ -41,6 +41,7 @@ message(STATUS "Eigen version: ${EIGEN_VERSION}")
 # Source Files
 # ===============================
 set(SOURCES
+  src/core/debug_logging.cpp
   src/core/point_utils.cpp
   src/estimation/imu_preintegration.cpp
   src/estimation/imu_ekf.cpp
@@ -165,6 +166,16 @@ if(BUILD_TESTING)
     )
     target_link_libraries(lidar_mid360_pointcloud_decoder_test
       ${PCL_LIBRARIES}
+    )
+  endif()
+
+  ament_add_gtest(debug_logging_test
+    test/debug_logging_test.cpp
+    src/core/debug_logging.cpp
+  )
+  if(TARGET debug_logging_test)
+    target_include_directories(debug_logging_test PRIVATE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
   endif()
 

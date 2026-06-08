@@ -24,6 +24,15 @@ extern double dept_err, beam_err;
 
 inline double get_memory();
 
+struct LioDebugStats
+{
+  bool success = false;
+  int iterations = 0;
+  int last_match_num = 0;
+  Eigen::Vector3d nnt_eigenvalues = Eigen::Vector3d::Zero();
+  Eigen::Vector3d nnt_min_direction = Eigen::Vector3d::Zero();
+};
+
 class VINA_SLAM
 {
 private:
@@ -59,6 +68,11 @@ public:
   int is_save_pose = 0;
   std::string pose_save_path;
   std::string pose_filename;
+  bool debug_enable_z_drift_log = false;
+  std::string debug_run_label;
+  std::string debug_log_root;
+  bool debug_fail_on_frontend_degenerate = false;
+  LioDebugStats last_lio_debug_stats;
 
   static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
 

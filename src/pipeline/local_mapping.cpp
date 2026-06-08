@@ -2,6 +2,7 @@
 // Moved from VINASlam.cpp: multi_margi(), multi_recut() (3 overloads), thd_odometry_localmapping()
 
 #include "vina_slam/core/constants.hpp"
+#include "vina_slam/core/debug_logging.hpp"
 #include "vina_slam/platform/ros2/node.hpp"
 #include "vina_slam/platform/ros2/publishers.hpp"
 #include "vina_slam/platform/ros2/io.hpp"
@@ -13,13 +14,34 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <limits>
 #include <malloc.h>
+#include <stdexcept>
 #include <thread>
 #include <unistd.h>
 
 namespace
 {
 constexpr std::size_t kDefaultVoxelMarkerReserve = 1024;
+
+void write_frontend_z_drift_header(std::ofstream& stream)
+{
+  stream << "frame_id,pcl_beg_time,imu_count,raw_point_count,downsampled_point_count,"
+            "z_after_imu,z_after_lio,delta_z_lio,delta_norm_lio,lio_success,last_match_num,"
+            "nnt_eig0,nnt_eig1,nnt_eig2,nnt_min_dir_x,nnt_min_dir_y,nnt_min_dir_z,"
+            "iterations,frontend_path,x_curr_modified_no_rollback\n";
+}
+
+void write_ba_z_drift_header(std::ofstream& stream)
+{
+  stream << "frame_id,timestamp,ba_enabled,window_size,lidar_factor_count,normal_factor_count,imu_factor_count,"
+            "z_before_ba,z_after_ba,delta_z_ba,delta_norm_ba,"
+            "imu_res_before,lidar_res_before,normal_res_before,total_res_before,"
+            "imu_res_after,lidar_res_after,normal_res_after,total_res_after\n";
+}
 }
 
 void VINA_SLAM::multi_margi(unordered_map<VOXEL_LOC, OctoTree*>& feat_map, double jour, int win_count,
@@ -299,6 +321,49 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
     FileReaderWriter::instance().init_pose_file(dir + pose_filename);
   }
 
+  std::ofstream z_drift_frontend_log;
+  std::ofstream z_drift_ba_log;
+  if (debug_enable_z_drift_log)
+  {
+    const std::string run_label = debug_run_label.empty() ? bagname : debug_run_label;
+    const auto log_paths = vina_slam::core::make_z_drift_log_paths(debug_log_root, run_label);
+    try
+    {
+      std::filesystem::create_directories(log_paths.run_dir);
+    }
+    catch (const std::exception& e)
+    {
+      RCLCPP_ERROR(node->get_logger(), "[Debug.z_drift_log] Cannot create log directory '%s': %s",
+                   log_paths.run_dir.string().c_str(), e.what());
+    }
+
+    z_drift_frontend_log.open(log_paths.frontend_csv, std::ios::out | std::ios::trunc);
+    if (z_drift_frontend_log.is_open())
+    {
+      z_drift_frontend_log << std::fixed << std::setprecision(9);
+      write_frontend_z_drift_header(z_drift_frontend_log);
+      RCLCPP_INFO(node->get_logger(), "[Debug.z_drift_log] Frontend CSV: %s", log_paths.frontend_csv.string().c_str());
+    }
+    else
+    {
+      RCLCPP_ERROR(node->get_logger(), "[Debug.z_drift_log] Cannot open frontend CSV: %s",
+                   log_paths.frontend_csv.string().c_str());
+    }
+
+    z_drift_ba_log.open(log_paths.ba_csv, std::ios::out | std::ios::trunc);
+    if (z_drift_ba_log.is_open())
+    {
+      z_drift_ba_log << std::fixed << std::setprecision(9);
+      write_ba_z_drift_header(z_drift_ba_log);
+      RCLCPP_INFO(node->get_logger(), "[Debug.z_drift_log] BA CSV: %s", log_paths.ba_csv.string().c_str());
+    }
+    else
+    {
+      RCLCPP_ERROR(node->get_logger(), "[Debug.z_drift_log] Cannot open BA CSV: %s",
+                   log_paths.ba_csv.string().c_str());
+    }
+  }
+
   while (rclcpp::ok())
   {
     node->get_parameter("finish", is_finish);
@@ -405,6 +470,9 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
         continue;
       }
 
+      const IMUST x_after_imu = x_curr;
+      const std::size_t raw_point_count = pcl_curr->size();
+
       pcl::PointCloud<PointType> pl_down = *pcl_curr;
       down_sampling_voxel(pl_down, down_size);
 
@@ -417,12 +485,28 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       PVecPtr pptr(new PVec);
       var_init(extrin_para, pl_down, pptr, dept_err, beam_err);
 
-      auto pcl_curr_temp = *pcl_curr;
-      PVecPtr no_ds_pptr(new PVec);
-      var_init(extrin_para, pcl_curr_temp, no_ds_pptr, dept_err, beam_err);
+      const int frame_id = win_base + win_count;
+      const bool lio_success = lio_state_estimation(pptr);
+      const IMUST x_after_lio = x_curr;
+      const Eigen::Vector3d delta_lio = x_after_lio.p - x_after_imu.p;
 
-      // if (lio_state_estimation(pptr))
-      if (VNC_lio(no_ds_pptr))
+      if (z_drift_frontend_log.is_open())
+      {
+        z_drift_frontend_log << frame_id << "," << odom_ekf.pcl_beg_time << "," << imus.size() << ","
+                             << raw_point_count << "," << pl_down.size() << "," << x_after_imu.p.z() << ","
+                             << x_after_lio.p.z() << "," << delta_lio.z() << "," << delta_lio.norm() << ","
+                             << static_cast<int>(lio_success) << "," << last_lio_debug_stats.last_match_num << ","
+                             << last_lio_debug_stats.nnt_eigenvalues[0] << ","
+                             << last_lio_debug_stats.nnt_eigenvalues[1] << ","
+                             << last_lio_debug_stats.nnt_eigenvalues[2] << ","
+                             << last_lio_debug_stats.nnt_min_direction.x() << ","
+                             << last_lio_debug_stats.nnt_min_direction.y() << ","
+                             << last_lio_debug_stats.nnt_min_direction.z() << ","
+                             << last_lio_debug_stats.iterations << ",lio_state_estimation,1\n";
+        z_drift_frontend_log.flush();
+      }
+
+      if (lio_success)
       {
         if (degrade_cnt > 0)
         {
@@ -433,6 +517,14 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
       else
       {
         // degrade_cnt++;
+        if (debug_fail_on_frontend_degenerate)
+        {
+          RCLCPP_ERROR(node->get_logger(),
+                       "[Debug.z_drift_log] Frontend degenerate at frame %d; x_curr was already updated and no "
+                       "rollback is applied",
+                       frame_id);
+          throw std::runtime_error("Debug.fail_on_frontend_degenerate: lio_state_estimation returned false");
+        }
       }
 
       pwld.clear();
@@ -546,11 +638,45 @@ void VINA_SLAM::thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node)
     if (win_count >= win_size)
     {
       t4 = node->now().seconds();
+      LI_BA_Optimizer opt_lsv;
+      const int ba_frame_id = win_base + win_count - 1;
+      const double ba_timestamp = x_buf[win_count - 1].t;
+      const Eigen::Vector3d p_before_ba = x_buf[win_count - 1].p;
+      double imu_res_before = std::numeric_limits<double>::quiet_NaN();
+      double lidar_res_before = std::numeric_limits<double>::quiet_NaN();
+      double normal_res_before = std::numeric_limits<double>::quiet_NaN();
+      double total_res_before = std::numeric_limits<double>::quiet_NaN();
+      double imu_res_after = std::numeric_limits<double>::quiet_NaN();
+      double lidar_res_after = std::numeric_limits<double>::quiet_NaN();
+      double normal_res_after = std::numeric_limits<double>::quiet_NaN();
+      double total_res_after = std::numeric_limits<double>::quiet_NaN();
+
+      if (z_drift_ba_log.is_open())
+      {
+        opt_lsv.evaluate_breakdown(x_buf, voxhess, normalFactor, imu_pre_buf, imu_res_before, lidar_res_before,
+                                   normal_res_before, total_res_before);
+      }
+
       if (if_BA == 1)
       {
-        LI_BA_Optimizer opt_lsv;
+        // opt_lsv.damping_iter(x_buf, voxhess, imu_pre_buf, &hess);
+        opt_lsv.damping_iter(x_buf, voxhess, normalFactor, imu_pre_buf, &hess);
+      }
 
-        opt_lsv.damping_iter(x_buf, voxhess, imu_pre_buf, &hess);
+      const Eigen::Vector3d p_after_ba = x_buf[win_count - 1].p;
+      if (z_drift_ba_log.is_open())
+      {
+        opt_lsv.evaluate_breakdown(x_buf, voxhess, normalFactor, imu_pre_buf, imu_res_after, lidar_res_after,
+                                   normal_res_after, total_res_after);
+        const Eigen::Vector3d delta_ba = p_after_ba - p_before_ba;
+        z_drift_ba_log << ba_frame_id << "," << ba_timestamp << "," << static_cast<int>(if_BA == 1) << ","
+                       << win_count << "," << voxhess.plvec_voxels.size() << ","
+                       << normalFactor.plvec_voxels.size() << "," << imu_pre_buf.size() << ","
+                       << p_before_ba.z() << "," << p_after_ba.z() << "," << delta_ba.z() << ","
+                       << delta_ba.norm() << "," << imu_res_before << "," << lidar_res_before << ","
+                       << normal_res_before << "," << total_res_before << "," << imu_res_after << ","
+                       << lidar_res_after << "," << normal_res_after << "," << total_res_after << "\n";
+        z_drift_ba_log.flush();
       }
 
       x_last = x_curr;

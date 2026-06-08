@@ -6,8 +6,8 @@ vina_slam:
       lid_topic: "/livox/lidar"
       imu_topic: "/livox/imu"
 
-      save_path: "/home/zry/Code/vina_slam_ws/data/map/"
-      bagname: "test"
+      save_path: "/tmp/vina_slam_z_drift/"
+      bagname: "outdoor_mapping_20260604_203924"
       # LiDAR type: 0=Livox CustomMsg, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense,
       # 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
       lidar_type: 7
@@ -24,13 +24,13 @@ vina_slam:
       # Save map: 0=disabled, 1=save to save_path/bagname
       is_save_map: 0
       # Save pose trajectory in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
-      is_save_pose: 0
+      is_save_pose: 1
       # Directory to save pose trajectory file; defaults to save_path/bagname/ if empty
       pose_save_path: ""
       # Pose trajectory filename
       pose_filename: "trajectory.txt"
       # Enable local BA: 0=EKF only, 1=sliding-window BA
-      if_BA: 0
+      if_BA: 1
       # Voxel downsample size (m) when saving the global map
       full_map_voxel_size: 0.1
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
@@ -39,6 +39,13 @@ vina_slam:
       visualization_max_layer: 2
       # Max voxel plane/normal visualization publish rate in Hz; <=0 publishes every checked frame
       visualization_publish_hz: 10.0
+
+    # ---------- Debug ----------
+    Debug:
+      enable_z_drift_log: true
+      run_label: "outdoor_mapping_20260604_203924"
+      log_root: "/tmp/vina_slam_z_drift"
+      fail_on_frontend_degenerate: false
 
     # ---------- Odometry ----------
     Odometry:
@@ -82,7 +89,7 @@ vina_slam:
       # Min points per voxel for BA; voxels below this produce no constraint
       min_ba_point: 1
       # Per-layer plane eigenvalue ratio threshold (inverted after loading); larger = more lenient
-      plane_eigen_value_thre: [1.0, 1.0, 1.0, 1.0]
+      plane_eigen_value_thre: [4.0, 4.0, 4.0, 4.0]
       # IMU factor weight in BA optimization; larger = stronger IMU constraint
       imu_coef: 0.0002
       # Number of threads for BA Hessian computation and voxel processing

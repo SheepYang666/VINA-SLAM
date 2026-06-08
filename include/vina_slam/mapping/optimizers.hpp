@@ -32,7 +32,10 @@ public:
   int imu_leng;
 
   // debug
-  void print_breakdown(const char* tag, std::vector<IMUST>& xs, LidarFactor& lidar, NormalFactor& normal,
+  void evaluate_breakdown(std::vector<IMUST>& xs, LidarFactor lidar, NormalFactor normal, std::deque<IMU_PRE*>& imus,
+                          double& imu_res, double& lidar_res, double& normal_res, double& total_res) const;
+
+  void print_breakdown(const char* tag, std::vector<IMUST>& xs, LidarFactor lidar, NormalFactor normal,
                        std::deque<IMU_PRE*>& imus, double& imu_res, double& lidar_res, double& normal_res,
                        double& total_res) const;
   // debug
