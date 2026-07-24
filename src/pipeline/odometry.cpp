@@ -63,7 +63,6 @@ void collectScanPlanes(OctoTree* node, std::vector<ScanPlaneInfo>& out)
 
 bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
 {
-  last_lio_debug_stats = LioDebugStats{};
   IMUST x_prop = x_curr;
 
   const int num_max_iter = use_vnc ? 4 : 20;
@@ -74,14 +73,12 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
   H_T_H.setZero();
   I_STATE.setIdentity();
   int rematch_num = 0;
-  int match_num = 0;
 
   int psize = pptr->size();
   vector<OctoTree*> octos(psize, nullptr);
 
   Eigen::Matrix3d nnt;
   Eigen::Matrix<double, DIM, DIM> cov_inv = x_curr.cov.inverse();
-  int iterations_run = 0;
 
   // VNC preprocessing: build scan voxels and extract scan planes
   unordered_map<VOXEL_LOC, OctoTree*> scan_voxels;
@@ -99,7 +96,6 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
 
   for (int iterCount = 0; iterCount < num_max_iter; iterCount++)
   {
-    iterations_run = iterCount + 1;
     Eigen::Matrix<double, 6, 6> HTH;
     HTH.setZero();
     Eigen::Matrix<double, 6, 1> HTz;
@@ -108,7 +104,6 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
     Eigen::Matrix3d rot_var = x_curr.cov.block<3, 3>(0, 0);
     Eigen::Matrix3d tsl_var = x_curr.cov.block<3, 3>(3, 3);
 
-    match_num = 0;
     nnt.setZero();
 
     for (int i = 0; i < psize; i++)
@@ -146,7 +141,6 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
         HTH += R_inv * jac * jac.transpose();
         HTz -= R_inv * jac * resi;
         nnt += pp.normal * pp.normal.transpose();
-        match_num++;
       }
     }
 
@@ -246,20 +240,7 @@ bool VINA_SLAM::LioStateEstimation(PVecPtr pptr, bool use_vnc)
 
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> saes(nnt);
   Eigen::Vector3d evalue = saes.eigenvalues();
-  Eigen::Vector3d min_direction = saes.eigenvectors().col(0);
-  if (min_direction.z() < 0.0)
-  {
-    min_direction = -min_direction;
-  }
-  const bool success = evalue[0] >= 14;
-
-  last_lio_debug_stats.success = success;
-  last_lio_debug_stats.iterations = iterations_run;
-  last_lio_debug_stats.last_match_num = match_num;
-  last_lio_debug_stats.nnt_eigenvalues = evalue;
-  last_lio_debug_stats.nnt_min_direction = min_direction;
-
-  return success;
+  return evalue[0] >= 14;
 }
 
 bool VINA_SLAM::lio_state_estimation(PVecPtr pptr)

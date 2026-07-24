@@ -256,7 +256,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-      Enabled: false
+      Enabled: true
       Name: current data
     - Class: rviz_default_plugins/Axes
       Enabled: true

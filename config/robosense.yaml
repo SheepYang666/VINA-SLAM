@@ -6,7 +6,9 @@ vina_slam:
       lid_topic: "/rslidar_sdk/left_rslidar_points"
       imu_topic: "/rslidar_sdk/left_rslidar_imu_data"
 
-      save_path: "/home/yang/Code/vina_slam_ws/key_frame_map/"
+      # Relative paths are resolved from the directory where `ros2 launch` is executed.
+      # Example: run from /home/zry/Code/VINA_SLAM -> data/map/Test_bag/
+      save_path: "data/map/"
       bagname: "Test_bag"
       # LiDAR type: 0=Livox CustomMsg, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
       lidar_type: 4
@@ -20,9 +22,9 @@ vina_slam:
       # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
       extrinsic_rota: [0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0]
 
-      # Save map: 0=disabled, 1=save to save_path/bagname
+      # Save optimized per-frame PCDs under save_path/bagname/pcd: 0=disabled, 1=enabled
       is_save_map: 0
-      # Save pose trajectory in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
+      # Save optimized per-frame poses in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
       is_save_pose: 0
       # Directory to save pose trajectory file; defaults to save_path/bagname/ if empty
       pose_save_path: ""
@@ -30,8 +32,6 @@ vina_slam:
       pose_filename: "trajectory.txt"
       # Enable local BA: 0=EKF only, 1=sliding-window BA
       if_BA: 1
-      # Voxel downsample size (m) when saving the global map
-      full_map_voxel_size: 0.05
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
       enable_visualization: 0
       # Max octree layer shown in voxel plane/normal visualization (0=root only)

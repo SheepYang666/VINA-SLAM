@@ -93,18 +93,6 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
   pose_filename = node->declare_parameter<std::string>("General.pose_filename", "trajectory.txt");
   node->get_parameter("General.pose_filename", pose_filename);
 
-  debug_enable_z_drift_log = node->declare_parameter<bool>("Debug.enable_z_drift_log", false);
-  node->get_parameter("Debug.enable_z_drift_log", debug_enable_z_drift_log);
-
-  debug_run_label = node->declare_parameter<std::string>("Debug.run_label", "");
-  node->get_parameter("Debug.run_label", debug_run_label);
-
-  debug_log_root = node->declare_parameter<std::string>("Debug.log_root", "");
-  node->get_parameter("Debug.log_root", debug_log_root);
-
-  debug_fail_on_frontend_degenerate = node->declare_parameter<bool>("Debug.fail_on_frontend_degenerate", false);
-  node->get_parameter("Debug.fail_on_frontend_degenerate", debug_fail_on_frontend_degenerate);
-
   if_BA = node->declare_parameter<int>("General.if_BA", false);
   node->get_parameter("General.if_BA", if_BA);
 
@@ -159,11 +147,6 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
     std::cout << RED << "[is_save_pose]: ERROR STATE " << RESET << std::endl;
   }
 
-  if (debug_enable_z_drift_log)
-  {
-    std::cout << GREEN << "[Debug.z_drift_log]: enabled" << RESET << std::endl;
-  }
-
   // ######################################## print log ########################################
 
   rclcpp::QoS imu_qos(8000);
@@ -215,9 +198,6 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
   voxel_size = node->declare_parameter<double>("Odometry.voxel_size", 1.0);
   node->get_parameter("Odometry.voxel_size", voxel_size);
-
-  full_map_voxel_size = node->declare_parameter<double>("General.full_map_voxel_size", 0.05);
-  node->get_parameter("General.full_map_voxel_size", full_map_voxel_size);
 
   min_eigen_value = node->declare_parameter<double>("Odometry.min_eigen_value", 0.0025);
   node->get_parameter("Odometry.min_eigen_value", min_eigen_value);
@@ -327,6 +307,7 @@ int VINA_SLAM::initialization(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imu
   {
     return 0;
   }
+  pcl::PointCloud<PointType>::Ptr frame_cloud(new pcl::PointCloud<PointType>(*pcl_curr));
 
   if (win_count == 0)
   {
@@ -346,6 +327,7 @@ int VINA_SLAM::initialization(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imu
   win_count++;
   x_buf.push_back(x_curr);
   pvec_buf.push_back(pptr);
+  frame_cloud_buf.push_back(frame_cloud);
   ResultOutput::instance().pub_localtraj(pwld, 0, x_curr, 0, pcl_path);
 
   if (win_count > 1)
@@ -415,6 +397,7 @@ void VINA_SLAM::system_reset(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus
 
   x_buf.clear();
   pvec_buf.clear();
+  frame_cloud_buf.clear();
   imu_pre_buf.clear();
   pl_tree->clear();
 
@@ -463,7 +446,7 @@ int main(int argc, char** argv)
     mp[i] = i;
   }
 
-  std::thread thread_odom(&VINA_SLAM::thd_odometry_localmapping, &vs, node);
+  std::thread thread_odom(&VINA_SLAM::run_odometry_local_mapping_loop, &vs, node);
 
   exec->spin();
 

@@ -57,21 +57,12 @@ struct PipelineConfig
   int is_save_map = 0;
   int thread_num = 5;
   int degrade_bound = 10;
-  double full_map_voxel_size = 0.05;
 };
 
 struct TopicConfig
 {
   std::string lid_topic = "/rslidar_points";
   std::string imu_topic = "/imu";
-};
-
-struct DebugConfig
-{
-  bool enable_z_drift_log = false;
-  std::string run_label;
-  std::string log_root = "/tmp/vina_slam_z_drift";
-  bool fail_on_frontend_degenerate = false;
 };
 
 struct SystemConfig
@@ -83,7 +74,6 @@ struct SystemConfig
   ExtrinsicConfig extrinsic;
   PipelineConfig pipeline;
   TopicConfig topics;
-  DebugConfig debug;
   std::string bagname = "noNameBag";
   std::string savepath;
 };

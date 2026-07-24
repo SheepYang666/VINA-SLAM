@@ -41,7 +41,6 @@ message(STATUS "Eigen version: ${EIGEN_VERSION}")
 # Source Files
 # ===============================
 set(SOURCES
-  src/core/debug_logging.cpp
   src/core/point_utils.cpp
   src/estimation/imu_preintegration.cpp
   src/estimation/imu_ekf.cpp
@@ -169,13 +168,22 @@ if(BUILD_TESTING)
     )
   endif()
 
-  ament_add_gtest(debug_logging_test
-    test/debug_logging_test.cpp
-    src/core/debug_logging.cpp
+  ament_add_gtest(io_test
+    test/io_test.cpp
+    src/platform/ros2/io.cpp
   )
-  if(TARGET debug_logging_test)
-    target_include_directories(debug_logging_test PRIVATE
+  if(TARGET io_test)
+    target_include_directories(io_test PRIVATE
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      ${EIGEN3_INCLUDE_DIRS}
+      ${PCL_INCLUDE_DIRS}
+    )
+    ament_target_dependencies(io_test
+      rclcpp
+      sensor_msgs
+    )
+    target_link_libraries(io_test
+      ${PCL_LIBRARIES}
     )
   endif()
 

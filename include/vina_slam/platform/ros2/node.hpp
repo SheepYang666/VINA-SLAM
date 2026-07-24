@@ -24,15 +24,6 @@ extern double dept_err, beam_err;
 
 inline double get_memory();
 
-struct LioDebugStats
-{
-  bool success = false;
-  int iterations = 0;
-  int last_match_num = 0;
-  Eigen::Vector3d nnt_eigenvalues = Eigen::Vector3d::Zero();
-  Eigen::Vector3d nnt_min_direction = Eigen::Vector3d::Zero();
-};
-
 class VINA_SLAM
 {
 private:
@@ -44,11 +35,11 @@ public:
   IMUEKF odom_ekf;
   unordered_map<VOXEL_LOC, OctoTree*> surf_map, surf_map_slide;
   double down_size;
-  double full_map_voxel_size;
 
   int win_size;
   vector<IMUST> x_buf;
   vector<PVecPtr> pvec_buf;
+  vector<pcl::PointCloud<PointType>::Ptr> frame_cloud_buf;
   deque<IMU_PRE*> imu_pre_buf;
   int win_count = 0, win_base = 0;
   vector<vector<SlideWindow*>> sws;
@@ -68,11 +59,6 @@ public:
   int is_save_pose = 0;
   std::string pose_save_path;
   std::string pose_filename;
-  bool debug_enable_z_drift_log = false;
-  std::string debug_run_label;
-  std::string debug_log_root;
-  bool debug_fail_on_frontend_degenerate = false;
-  LioDebugStats last_lio_debug_stats;
 
   static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
 
@@ -108,7 +94,7 @@ public:
                    vector<vector<SlideWindow*>>& sws);
 
   // The main thread of odometry and local mapping (implemented in pipeline/local_mapping.cpp)
-  void thd_odometry_localmapping(std::shared_ptr<rclcpp::Node> node);
+  void run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> node);
 };
 
 // Inline implementation of get_memory

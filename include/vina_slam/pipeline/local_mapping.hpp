@@ -5,4 +5,4 @@
 // This file exists as a module marker for the pipeline/local_mapping code.
 
 // The implementations of multi_recut() (3 overloads), multi_margi(),
-// and thd_odometry_localmapping() live in src/pipeline/local_mapping.cpp.
+// and run_odometry_local_mapping_loop() live in src/pipeline/local_mapping.cpp.

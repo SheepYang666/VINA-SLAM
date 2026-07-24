@@ -5,5 +5,10 @@ compile_commands.json
 .cache/
 .vscode/
 *.log
+
+.agents
 .claude/
 .codex
+.codex/
+
+./vscode

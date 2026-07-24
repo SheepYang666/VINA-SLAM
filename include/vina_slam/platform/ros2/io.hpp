@@ -19,11 +19,12 @@ public:
 
   static FileReaderWriter& instance();
 
-  void save_pcd(PVecPtr pptr, IMUST& xx, int count, const string& savename);
-
   void clear_txt_file(const std::string& filePath);
 
   void init_pose_file(const std::string& full_path);
 
   void save_pose_tum(const IMUST& x);
+
+  bool save_frame_pcd(const pcl::PointCloud<PointType>& cloud, const IMUST& optimized_pose, const IMUST& extrinsic,
+                      int frame_id, const std::string& save_dir);
 };
