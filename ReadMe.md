@@ -9,13 +9,13 @@ Then, a tangent-space metric is further proposed to explicitly supplement rotati
 
 Finally, we formulate a sliding-window bundle adjustment module that tightly couples IMU factors, normal consistency factors, and planar constraints. A key component is the use of the minimum eigenvalue of each voxel's covariance, as a statistically principled planar factor that improves the Hessian condition number and enhances cross-view geometric consistency.
 
-![Fig4](./docs/pics/Fig3.gif)
+![Fig1](./docs/pics/Fig1.png)
 
-![Fig3](./docs/pics/Fig4.gif)
+![Fig2](./docs/pics/Fig2.png)
 
-![](./docs/pics/Fig1.png)
+![Fig3](./docs/pics/Fig3.gif)
 
-![](./docs/pics/Fig2.png)
+![Fig4](./docs/pics/Fig4.gif)
 
 ## Running
 
