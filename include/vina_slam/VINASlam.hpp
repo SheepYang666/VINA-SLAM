@@ -3,7 +3,6 @@
 #pragma once
 
 // Sensor module
-#include "vina_slam/sensor/imu_buffer.hpp"
 #include "vina_slam/sensor/lidar_decoder.hpp"
 #include "vina_slam/sensor/sync.hpp"
 

@@ -8,11 +8,9 @@
 #include "vina_slam/preintegration.hpp"
 
 #include <deque>
-#include <fstream>
 #include <pcl/point_cloud.h>
 #include <rclcpp/node.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,8 +19,6 @@ using namespace std;
 
 // Global variables used by the VINA_SLAM class
 extern double dept_err, beam_err;
-
-inline double get_memory();
 
 class VINA_SLAM
 {
@@ -46,11 +42,10 @@ public:
 
   vector<OctoTree*> octos_release;
   int thread_num = 5;
-  int degrade_bound = 10;
 
   bool is_finish = false;
 
-  string bagname, savepath, lid_topic, imu_topic;
+  string bagname, bag_path, savepath, lid_topic, imu_topic;
   int is_save_map;
   int if_BA;
   int enable_visualization = 0;
@@ -59,10 +54,6 @@ public:
   int is_save_pose = 0;
   std::string pose_save_path;
   std::string pose_filename;
-
-  static VINA_SLAM& instance(const rclcpp::Node::SharedPtr& node_in);
-
-  static VINA_SLAM& instance();
 
   explicit VINA_SLAM(const rclcpp::Node::SharedPtr& node_in);
 
@@ -96,31 +87,3 @@ public:
   // The main thread of odometry and local mapping (implemented in pipeline/local_mapping.cpp)
   void run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> node);
 };
-
-// Inline implementation of get_memory
-inline double get_memory()
-{
-  std::ifstream infile("/proc/self/status");
-  double mem = -1;
-  std::string lineStr, str;
-  while (std::getline(infile, lineStr))
-  {
-    std::stringstream ss(lineStr);
-    bool is_find = false;
-    while (ss >> str)
-    {
-      if (str == "VmRSS:")
-      {
-        is_find = true;
-        continue;
-      }
-
-      if (is_find)
-        mem = std::stod(str);
-      break;
-    }
-    if (is_find)
-      break;
-  }
-  return mem / (1048576);
-}

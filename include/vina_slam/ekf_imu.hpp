@@ -26,7 +26,6 @@ class IMUEKF
 
     double scale_gravity = 1.0;
     vector<IMUST> imu_poses;
-    string imu_topic = "";
 
     int point_notime = 0;
 

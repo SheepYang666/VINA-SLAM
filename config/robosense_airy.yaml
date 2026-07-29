@@ -6,6 +6,13 @@ vina_slam:
       lid_topic: "/rslidar_points"
       imu_topic: "/rslidar_imu_data"
 
+      # rosbag2 directory to read (required). lid_topic / imu_topic select which streams to use.
+      bag_path: "/home/zry/data_sets/HFUT_research_institute/2026-06-05-14-38-38_lidar_imu"
+
+      # lid_topic: "/rslidar_points"
+      # imu_topic: "/rslidar_imu_data"
+
+
       # Relative paths are resolved from the directory where `ros2 launch` is executed.
       # Example: run from /home/zry/Code/VINA_SLAM -> data/map/robosense_airy/
       save_path: "data/map/"
@@ -13,7 +20,7 @@ vina_slam:
       # LiDAR type: 0=Livox CustomMsg, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense, 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
       lidar_type: 6
       # Blind zone radius (m), points within this range are ignored
-      blind: 1.0
+      blind: 0.5
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
@@ -23,15 +30,15 @@ vina_slam:
       # LiDAR-to-IMU extrinsic: rotation matrix (row-major 3x3)
       extrinsic_rota: [0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0]
       # Save optimized per-frame PCDs under save_path/bagname/pcd: 0=disabled, 1=enabled
-      is_save_map: 1
+      is_save_map: 0
       # Save optimized per-frame poses in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
-      is_save_pose: 1
+      is_save_pose: 0
       # Directory to save pose trajectory file; defaults to save_path/bagname/ if empty
       pose_save_path: ""
       # Pose trajectory filename
       pose_filename: "trajectory.txt"
       # Enable local BA: 0=EKF only, 1=sliding-window BA
-      if_BA: 1
+      if_BA: 0
       # Enable voxel plane and normal visualization in RViz: 0=disabled, 1=enabled
       enable_visualization: 0
       # Max octree layer shown in voxel plane/normal visualization (0=root only)
@@ -59,8 +66,6 @@ vina_slam:
       voxel_size: 1.0
       # Min eigenvalue threshold for plane detection; smaller = stricter
       min_eigen_value: 0.0025
-      # Degrade count limit; system resets after this many consecutive degraded frames
-      degrade_bound: 100
       # 0=normal (has timestamps, IMU motion compensation), 1=no timestamps (skip deskewing)
       point_notime: 0
 

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <malloc.h>
+#include <rclcpp/rclcpp.hpp>
 #include <thread>
 #include <unistd.h>
 
@@ -278,7 +279,6 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
   vector<double> beg_times;
   vector<deque<std::shared_ptr<sensor_msgs::msg::Imu>>> vec_imus;
   bool release_flag = false;
-  int degrade_cnt = 0;
 
   LidarFactor voxhess(win_size);
   NormalFactor normalFactor(win_size);
@@ -389,9 +389,6 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
       continue;
     }
 
-    double t0 = node->now().seconds();
-    double t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0;
-
     if (motion_init_flag)
     {
       int init = initialization(imus, hess, voxhess, pwld, pcl_curr);
@@ -430,21 +427,11 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
       PVecPtr pptr(new PVec);
       var_init(extrin_para, pl_down, pptr, dept_err, beam_err);
 
-      const bool lio_success = lio_state_estimation(pptr);
-
-      if (lio_success)
-      {
-        if (degrade_cnt > 0)
-        {
-          degrade_cnt--;
-        }
-      }
+      lio_state_estimation(pptr);
 
       pwld.clear();
       pvec_update(pptr, x_curr, pwld);
       ResultOutput::instance().pub_localtraj(pwld, jour, x_curr, 0, pcl_path);
-
-      t1 = node->now().seconds();
 
       win_count++;
       x_buf.push_back(x_curr);
@@ -462,10 +449,8 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
       normalFactor.win_size = win_size;
 
       cut_voxel_multi(surf_map, pvec_buf[win_count - 1], win_count - 1, surf_map_slide, win_size, pwld, sws);
-      t2 = node->now().seconds();
 
       multi_recut(surf_map_slide, win_count, x_buf, voxhess, normalFactor, sws);
-      t3 = node->now().seconds();
 
       // Publish voxel plane and normal markers if visualization is enabled
       if (enable_visualization && (pub_voxel_plane || pub_voxel_normal))
@@ -534,7 +519,6 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
 
     if (win_count >= win_size)
     {
-      t4 = node->now().seconds();
       LI_BA_Optimizer opt_lsv;
 
       if (if_BA == 1)
@@ -551,12 +535,10 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
 
       x_curr.R = x_buf[win_count - 1].R;
       x_curr.p = x_buf[win_count - 1].p;
-      t5 = node->now().seconds();
 
       ResultOutput::instance().pub_localmap(mgsize, 0, pvec_buf, x_buf, pcl_path, win_base, win_count);
 
       multi_margi(surf_map_slide, jour, win_count, x_buf, voxhess, sws[0]);
-      t6 = node->now().seconds();
 
       if ((win_base + win_count) % 10 == 0)
       {
@@ -600,8 +582,6 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
       win_base += mgsize;
       win_count -= mgsize;
     }
-    double t_end = node->now().seconds();
-    double mem = get_memory();
   }
 
   // Save any frames still held by the final sliding window. They have already passed through
@@ -629,4 +609,6 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
   }
   sws[0].clear();
   malloc_trim(0);
+
+  rclcpp::shutdown();
 }

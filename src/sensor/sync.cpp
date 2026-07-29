@@ -76,11 +76,8 @@ bool sync_packages(pcl::PointCloud<PointType>::Ptr& pl_ptr, deque<std::shared_pt
   }
   mBuf.unlock();
 
-  // If the IMU data is used up, it means the data flow is broken and the program is exited
-  if (imu_buf.empty())
-  {
-    exit(0);
-  }
+  // Empty imu_buf is normal at end-of-bag after the last scan's IMUs are consumed.
+  // Do not abort the process (legacy live-stream behavior).
 
   pl_ready = false;  // The current frame processing is completed, the flag is reset
 

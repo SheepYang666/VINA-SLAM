@@ -34,6 +34,8 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 find_package(Eigen3 REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
 
 message(STATUS "Eigen version: ${EIGEN_VERSION}")
 
@@ -56,6 +58,7 @@ set(SOURCES
   src/pipeline/local_mapping.cpp
   src/platform/ros2/publishers.cpp
   src/platform/ros2/subscribers.cpp
+  src/platform/ros2/bag_reader.cpp
   src/platform/ros2/io.cpp
   src/platform/ros2/node.cpp
 )
@@ -108,8 +111,8 @@ ament_target_dependencies(${PROJECT_NAME}
   pcl_conversions
   tf2_ros
   livox_ros_driver2
-
-  # livox_ros_driver
+  rosbag2_cpp
+  rosbag2_storage
 )
 
 # ===============================

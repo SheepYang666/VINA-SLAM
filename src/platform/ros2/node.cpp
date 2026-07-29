@@ -2,13 +2,12 @@
 // Moved from VINASlam.cpp
 
 #include "vina_slam/platform/ros2/node.hpp"
+#include "vina_slam/platform/ros2/bag_reader.hpp"
 #include "vina_slam/platform/ros2/publishers.hpp"
-#include "vina_slam/platform/ros2/subscribers.hpp"
 #include "vina_slam/platform/ros2/io.hpp"
 #include "vina_slam/pipeline/initialization.hpp"
 #include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/sensor/sync.hpp"
-#include "vina_slam/sensor/lidar_decoder.hpp"
 #include "vina_slam/mapping/optimizers.hpp"
 #include "vina_slam/mapping/voxel_map.hpp"
 
@@ -16,38 +15,13 @@
 #include <Eigen/Sparse>
 #include <Eigen/SparseQR>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <rclcpp/executors/multi_threaded_executor.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <thread>
 
-namespace
-{
-template <typename T>
-void declare_if_not(const rclcpp::Node::SharedPtr& node, const std::string& name, const T& default_value)
-{
-  if (node && !node->has_parameter(name))
-  {
-    node->declare_parameter<T>(name, default_value);
-  }
-}
-}  // namespace
-
 // Global variables
 double dept_err, beam_err;
-
-VINA_SLAM& VINA_SLAM::instance(const rclcpp::Node::SharedPtr& node_in)
-{
-  static VINA_SLAM inst(node_in);
-  return inst;
-}
-
-VINA_SLAM& VINA_SLAM::instance()
-{
-  rclcpp::Node::SharedPtr node_temp;
-  return instance(node_temp);
-}
 
 VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 {
@@ -56,6 +30,9 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
   bagname = node->declare_parameter("General.bagname", "noNameBag");
   node->get_parameter("General.bagname", bagname);
+
+  bag_path = node->declare_parameter("General.bag_path", "");
+  node->get_parameter("General.bag_path", bag_path);
 
   savepath = node->declare_parameter("General.save_path", "");
   node->get_parameter("General.save_path", savepath);
@@ -149,31 +126,6 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
   // ######################################## print log ########################################
 
-  rclcpp::QoS imu_qos(8000);
-  imu_qos.keep_last(8000);
-  imu_qos.best_effort();
-
-  rclcpp::QoS pcl_qos(1000);
-  pcl_qos.keep_last(1000);
-  pcl_qos.best_effort();
-
-  sub_imu = node->create_subscription<sensor_msgs::msg::Imu>(
-      imu_topic, imu_qos, [this](const sensor_msgs::msg::Imu::SharedPtr msg) { imu_handler(msg); });
-
-  if (feat.lidar_type == LIVOX)
-  {
-    sub_pcl_livox = node->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-        lid_topic, rclcpp::SensorDataQoS(),
-        [](const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) { pcl_handler(msg); });
-  }
-  else
-  {
-    sub_pcl_standard = node->create_subscription<sensor_msgs::msg::PointCloud2>(
-        lid_topic, pcl_qos,
-        [](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { pcl_handler(msg); });
-  }
-  odom_ekf.imu_topic = imu_topic;
-
   // Odometry param
   cov_gyr = node->declare_parameter<double>("Odometry.cov_gyr", 0.1);
   node->get_parameter("Odometry.cov_gyr", cov_gyr);
@@ -201,9 +153,6 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
   min_eigen_value = node->declare_parameter<double>("Odometry.min_eigen_value", 0.0025);
   node->get_parameter("Odometry.min_eigen_value", min_eigen_value);
-
-  degrade_bound = node->declare_parameter<int>("Odometry.degrade_bound", 100);
-  node->get_parameter("Odometry.degrade_bound", degrade_bound);
 
   point_notime = node->declare_parameter<int>("Odometry.point_notime", 0);
   node->get_parameter("Odometry.point_notime", point_notime);
@@ -292,6 +241,8 @@ VINA_SLAM::VINA_SLAM(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 
   sws.resize(thread_num);
   cout << "bagname: " << bagname << endl;
+  cout << "bag_path: " << bag_path << endl;
+  cout << "lid_topic: " << lid_topic << " imu_topic: " << imu_topic << endl;
 }
 
 int VINA_SLAM::initialization(deque<std::shared_ptr<sensor_msgs::msg::Imu>>& imus, Eigen::MatrixXd& hess,
@@ -440,16 +391,41 @@ int main(int argc, char** argv)
   Initialization::instance(node);
   VINA_SLAM vs(node);
 
+  if (vs.bag_path.empty())
+  {
+    std::cerr << "[ERROR] General.bag_path is empty. Set a rosbag2 directory in the config YAML." << std::endl;
+    return 1;
+  }
+
   mp.resize(vs.win_size);
   for (int i = 0; i < mp.size(); i++)
   {
     mp[i] = i;
   }
 
+  vina_slam::BagReaderOptions bag_opts;
+  bag_opts.bag_path = vs.bag_path;
+  bag_opts.lid_topic = vs.lid_topic;
+  bag_opts.imu_topic = vs.imu_topic;
+  bag_opts.lidar_type = feat.lidar_type;
+
   std::thread thread_odom(&VINA_SLAM::run_odometry_local_mapping_loop, &vs, node);
+  std::thread thread_bag([&node, bag_opts]() {
+    try
+    {
+      vina_slam::run_bag_reader(node, bag_opts);
+    }
+    catch (const std::exception& e)
+    {
+      std::cerr << "[BagReader] " << e.what() << std::endl;
+      node->set_parameter(rclcpp::Parameter("finish", true));
+      rclcpp::shutdown();
+    }
+  });
 
   exec->spin();
 
+  thread_bag.join();
   thread_odom.join();
 
   return 0;

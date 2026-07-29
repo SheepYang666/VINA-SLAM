@@ -6,6 +6,10 @@ vina_slam:
       lid_topic: "/velodyne_points"
       imu_topic: "/imu/data"
 
+      # rosbag2 directory to read (required). lid_topic / imu_topic select which streams to use.
+      bag_path: ""
+
+
       # Relative paths are resolved from the directory where `ros2 launch` is executed.
       # Example: run from /home/zry/Code/VINA_SLAM -> data/M2UD/Mixed/mixed_03/
       save_path: "data/M2UD/Mixed/"
@@ -86,8 +90,6 @@ vina_slam:
       voxel_size: 1.0
       # Min eigenvalue threshold for plane detection; smaller = stricter
       min_eigen_value: 0.0025
-      # Degrade count limit; system resets after this many consecutive degraded frames
-      degrade_bound: 10
       # 0=normal (has timestamps, IMU motion compensation), 1=no timestamps (skip deskewing)
       point_notime: 0
 

@@ -28,6 +28,8 @@
   <depend>tf2_ros</depend>
   <depend>livox_ros_driver2</depend>
   <depend>visualization_msgs</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
 
   <!-- Testing dependencies -->
   <test_depend>ament_cmake_gtest</test_depend>

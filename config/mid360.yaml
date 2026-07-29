@@ -6,15 +6,19 @@ vina_slam:
       lid_topic: "/livox/lidar"
       imu_topic: "/livox/imu"
 
+      # rosbag2 directory to read (required). lid_topic / imu_topic select which streams to use.
+      bag_path: ""
+
+
       # Relative paths are resolved from the directory where `ros2 launch` is executed.
       # Example: run from /home/zry/Code/VINA_SLAM -> data/map/test/
       save_path: "data/map/"
       bagname: "test"
       # LiDAR type: 0=Livox CustomMsg, 1=Velodyne, 2=Ouster, 3=Hesai, 4=RoboSense,
       # 5=Simulation, 6=RoboSense Airy, 7=Livox MID360 PointCloud2
-      lidar_type: 7
+      lidar_type: 0
       # Blind zone radius (m); the node squares this value before decoder distance checks
-      blind: 0.0
+      blind: 2.0
       # Take every N-th point for raw point cloud sparsification
       point_filter_num: 1
 
@@ -60,8 +64,6 @@ vina_slam:
       voxel_size: 0.5
       # Min eigenvalue threshold for plane detection; smaller = stricter
       min_eigen_value: 0.0025
-      # Degrade count limit; system resets after this many consecutive degraded frames
-      degrade_bound: 10
       # 0=normal (has timestamps, IMU motion compensation), 1=no timestamps (skip deskewing)
       point_notime: 0
 
