@@ -19,27 +19,21 @@ Finally, we formulate a sliding-window bundle adjustment module that tightly cou
 
 ## Running
 
+1. Edit a config under `config/` (e.g. `config/robosense_airy.yaml`): set `General.bag_path` to a rosbag2 directory, and match `lid_topic` / `imu_topic` / `lidar_type` to the bag.
+
+2. Build and launch:
+
 ```bash
+cd /path/to/ws
+colcon build --packages-select vina_slam
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch vina_slam start.launch.py
+ros2 launch vina_slam start.launch.py vina_config:=robosense_airy.yaml
 ```
 
-## RViz Trajectory Display
+Optional: `launch_rviz:=false` to skip RViz. The node reads LiDAR/IMU from the bag itself; no separate `ros2 bag play` is needed.
 
-The path display in the default RViz config subscribes to `/curr_path`.
-
-`/curr_path` publishes the full accumulated trajectory snapshot, not incremental single-point updates. To avoid
-seeing duplicated path snapshots after trajectory refinement, the default RViz config keeps:
-
-- Topic: `/curr_path`
-- Display type: `PointCloud2`
-- `Decay Time: 0`
-
-When the system is reset, VINA-SLAM now publishes an empty message on `/curr_path` so the old trajectory is
-cleared before a new trajectory starts.
-
-`/map_path` was a legacy topic name and is no longer used by the current launch + RViz configuration.
+Available configs: `mid360.yaml`, `velodyne.yaml`, `robosense.yaml`, `robosense_airy.yaml`, `HILTI.yaml`, `outdoor_fly.yaml`, `compus_elevator.yaml`.
 
 ### 📖 Citation
 
@@ -58,7 +52,10 @@ publisher={MDPI}
 }
 ```
 
+
+
 ### Acknowledgements
 
 - Thanks for [VoxelMap](https://github.com/hku-mars/VoxelMap).
 - Thanks for [Voxel-SLAM](https://github.com/hku-mars/Voxel-SLAM).
+
