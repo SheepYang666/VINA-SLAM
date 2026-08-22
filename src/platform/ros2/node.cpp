@@ -6,6 +6,7 @@
 #include "vina_slam/platform/ros2/publishers.hpp"
 #include "vina_slam/platform/ros2/io.hpp"
 #include "vina_slam/pipeline/initialization.hpp"
+#include "vina_slam/core/constants.hpp"
 #include "vina_slam/core/point_utils.hpp"
 #include "vina_slam/sensor/sync.hpp"
 #include "vina_slam/mapping/optimizers.hpp"
@@ -16,6 +17,7 @@
 #include <Eigen/SparseQR>
 #include <filesystem>
 #include <iostream>
+#include <unistd.h>
 #include <rclcpp/executors/multi_threaded_executor.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <thread>
@@ -427,6 +429,9 @@ int main(int argc, char** argv)
 
   thread_bag.join();
   thread_odom.join();
+
+  std::cout << BOLDGREEN << "[INFO] [vina_slam]: process has finished cleanly [pid " << getpid() << "]" << RESET
+            << std::endl;
 
   return 0;
 }

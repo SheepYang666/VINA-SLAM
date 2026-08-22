@@ -84,7 +84,7 @@ void FileReaderWriter::save_pose_tum(const IMUST& x)
 
   // TUM trajectory format:
   // timestamp tx ty tz qx qy qz qw
-  // The caller supplies the post-BA pose, so each written row is the optimized frame pose.
+  // timestamp is the LiDAR scan header stamp; pose is the post-BA optimized frame pose.
   Eigen::Quaterniond q(x.R);
   pose_ofs << std::fixed << std::setprecision(9)
            << x.t << " "

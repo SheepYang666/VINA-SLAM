@@ -91,7 +91,8 @@ void IMUEKF::motion_blur(IMUST &xc, pcl::PointCloud<PointType> &pcl_in,
     xc.v = vel_imu + note * acc_imu * dt;
     xc.R = R_imu * Exp(note * angvel_avr, dt);
     xc.p = pos_imu + note * vel_imu * dt + note * 0.5 * acc_imu * dt * dt;
-    xc.t = pcl_end_time;
+    // Frame timestamp for saved trajectory: LiDAR scan header stamp (pcl_beg_time).
+    xc.t = pcl_beg_time;
 
     auto imu1 = std::make_shared<sensor_msgs::msg::Imu>(*imus.front());
     auto imu2 = std::make_shared<sensor_msgs::msg::Imu>(*imus.back());

@@ -1,5 +1,6 @@
 #include "vina_slam/platform/ros2/bag_reader.hpp"
 
+#include "vina_slam/core/constants.hpp"
 #include "vina_slam/lidar_pointcloud_decoder.hpp"
 #include "vina_slam/platform/ros2/subscribers.hpp"
 #include "vina_slam/sensor/lidar_decoder.hpp"
@@ -61,11 +62,6 @@ void wait_for_drain(double idle_timeout_sec)
     {
       // Allow the odometry thread to finish the in-flight synced package (if any).
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      if (imu_size > 0)
-      {
-        std::cout << "[BagReader] Drain complete with leftover imu_buf=" << imu_size
-                  << " (expected after last lidar), finishing." << std::endl;
-      }
       return;
     }
 
@@ -173,7 +169,8 @@ void run_bag_reader(const rclcpp::Node::SharedPtr& node, const BagReaderOptions&
     }
   }
 
-  std::cout << "[BagReader] Finished reading. imu=" << imu_count << " lidar=" << lidar_count << std::endl;
+  std::cout << "\n\n\n" << BOLDGREEN << "[BagReader] Finished reading. imu=" << imu_count << " lidar=" << lidar_count
+            << RESET << std::endl;
 
   wait_for_drain(options.drain_idle_timeout_sec);
 
