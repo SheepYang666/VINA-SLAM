@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iomanip>
 #include <pcl/io/pcd_io.h>
 #include <sstream>
 #include <unistd.h>
@@ -25,13 +26,10 @@ bool has_field(const pcl::PCLPointCloud2& cloud, const std::string& name)
   return std::any_of(cloud.fields.begin(), cloud.fields.end(),
                      [&](const pcl::PCLPointField& field) { return field.name == name; });
 }
-}  // namespace
 
-TEST(FileReaderWriter, SaveFramePcdPreservesFieldsAndUsesOptimizedPose)
+pcl::PointCloud<PointType>::Ptr make_single_point_cloud()
 {
-  const auto dir = make_temp_dir("vina_slam_frame_pcd");
-
-  pcl::PointCloud<PointType> cloud;
+  pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
   PointType point;
   point.x = 1.0F;
   point.y = 2.0F;
@@ -41,17 +39,26 @@ TEST(FileReaderWriter, SaveFramePcdPreservesFieldsAndUsesOptimizedPose)
   point.normal_y = 1.0F;
   point.normal_z = 0.0F;
   point.curvature = 0.125F;
-  cloud.push_back(point);
+  cloud->push_back(point);
+  return cloud;
+}
 
+IMUST make_extrinsic()
+{
   IMUST extrinsic;
-  extrinsic.R.setIdentity();
+  extrinsic.R = Eigen::AngleAxisd(M_PI / 2.0, Eigen::Vector3d::UnitZ()).toRotationMatrix();
   extrinsic.p = Eigen::Vector3d(1.0, 0.0, 0.0);
+  return extrinsic;
+}
+}  // namespace
 
-  IMUST optimized_pose;
-  optimized_pose.R = Eigen::AngleAxisd(M_PI / 2.0, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-  optimized_pose.p = Eigen::Vector3d(10.0, 20.0, 30.0);
+TEST(FileReaderWriter, SaveFramePcdPreservesFieldsAndAppliesExtrinsicOnly)
+{
+  const auto dir = make_temp_dir("vina_slam_frame_pcd");
 
-  ASSERT_TRUE(FileReaderWriter::instance().save_frame_pcd(cloud, optimized_pose, extrinsic, 7, dir.string()));
+  ASSERT_TRUE(FileReaderWriter::instance().save_frame_pcd(make_single_point_cloud(), make_extrinsic(), 7,
+                                                          dir.string()));
+  ASSERT_TRUE(FileReaderWriter::instance().flush_frame_pcd());
 
   pcl::PCLPointCloud2 pcd_blob;
   ASSERT_EQ(pcl::io::loadPCDFile((dir / "000007.pcd").string(), pcd_blob), 0);
@@ -68,14 +75,49 @@ TEST(FileReaderWriter, SaveFramePcdPreservesFieldsAndUsesOptimizedPose)
   ASSERT_EQ(pcl::io::loadPCDFile<PointType>((dir / "000007.pcd").string(), loaded), 0);
   ASSERT_EQ(loaded.size(), 1U);
 
-  EXPECT_NEAR(loaded[0].x, 8.0F, 1e-5F);
-  EXPECT_NEAR(loaded[0].y, 22.0F, 1e-5F);
-  EXPECT_NEAR(loaded[0].z, 33.0F, 1e-5F);
+  // Body frame only: Rz(90) * (1, 2, 3) + (1, 0, 0)
+  EXPECT_NEAR(loaded[0].x, -1.0F, 1e-5F);
+  EXPECT_NEAR(loaded[0].y, 1.0F, 1e-5F);
+  EXPECT_NEAR(loaded[0].z, 3.0F, 1e-5F);
   EXPECT_NEAR(loaded[0].intensity, 42.0F, 1e-5F);
   EXPECT_NEAR(loaded[0].normal_x, -1.0F, 1e-5F);
   EXPECT_NEAR(loaded[0].normal_y, 0.0F, 1e-5F);
   EXPECT_NEAR(loaded[0].normal_z, 0.0F, 1e-5F);
   EXPECT_NEAR(loaded[0].curvature, 0.125F, 1e-5F);
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST(FileReaderWriter, SaveFramePcdWritesEveryQueuedFrameAsynchronously)
+{
+  const auto dir = make_temp_dir("vina_slam_frame_pcd_async");
+  constexpr int kFrameCount = 40;
+
+  for (int frame_id = 0; frame_id < kFrameCount; ++frame_id)
+  {
+    ASSERT_TRUE(
+        FileReaderWriter::instance().save_frame_pcd(make_single_point_cloud(), make_extrinsic(), frame_id,
+                                                    dir.string()));
+  }
+
+  ASSERT_TRUE(FileReaderWriter::instance().flush_frame_pcd());
+
+  for (int frame_id = 0; frame_id < kFrameCount; ++frame_id)
+  {
+    std::ostringstream name;
+    name << std::setfill('0') << std::setw(6) << frame_id << ".pcd";
+    EXPECT_TRUE(std::filesystem::exists(dir / name.str())) << "missing " << name.str();
+  }
+
+  std::filesystem::remove_all(dir);
+}
+
+TEST(FileReaderWriter, SaveFramePcdRejectsEmptyDirectoryAndNullCloud)
+{
+  const auto dir = make_temp_dir("vina_slam_frame_pcd_invalid");
+
+  EXPECT_FALSE(FileReaderWriter::instance().save_frame_pcd(make_single_point_cloud(), make_extrinsic(), 0, ""));
+  EXPECT_FALSE(FileReaderWriter::instance().save_frame_pcd(nullptr, make_extrinsic(), 0, dir.string()));
 
   std::filesystem::remove_all(dir);
 }

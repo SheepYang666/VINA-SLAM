@@ -11,6 +11,10 @@
 
 namespace
 {
+// Upper bound on frames waiting to be written. Beyond this the mapping loop is throttled so that a slow disk cannot
+// grow the backlog without limit.
+constexpr std::size_t kMaxPendingFrames = 16;
+
 std::string frame_pcd_filename(int frame_id)
 {
   std::ostringstream name;
@@ -27,6 +31,21 @@ bool is_valid_normal(const PointType& point)
 
 FileReaderWriter::FileReaderWriter(const rclcpp::Node::SharedPtr& node_in) : node(node_in)
 {
+}
+
+FileReaderWriter::~FileReaderWriter()
+{
+  {
+    std::lock_guard<std::mutex> lock(pcd_mutex);
+    pcd_writer_stopping = true;
+  }
+  pcd_queue_filled.notify_all();
+  pcd_queue_drained.notify_all();
+
+  if (pcd_writer_thread.joinable())
+  {
+    pcd_writer_thread.join();
+  }
 }
 
 FileReaderWriter& FileReaderWriter::instance(const rclcpp::Node::SharedPtr& node_in)
@@ -94,10 +113,10 @@ void FileReaderWriter::save_pose_tum(const IMUST& x)
   pose_ofs.flush();
 }
 
-bool FileReaderWriter::save_frame_pcd(const pcl::PointCloud<PointType>& cloud, const IMUST& optimized_pose,
-                                      const IMUST& extrinsic, int frame_id, const std::string& save_dir)
+bool FileReaderWriter::save_frame_pcd(const pcl::PointCloud<PointType>::ConstPtr& cloud, const IMUST& extrinsic,
+                                      int frame_id, const std::string& save_dir)
 {
-  if (save_dir.empty())
+  if (!cloud || save_dir.empty())
   {
     return false;
   }
@@ -109,28 +128,108 @@ bool FileReaderWriter::save_frame_pcd(const pcl::PointCloud<PointType>& cloud, c
     return false;
   }
 
-  pcl::PointCloud<PointType> cloud_world = cloud;
-  const Eigen::Matrix3d world_rotation = optimized_pose.R * extrinsic.R;
-  const Eigen::Vector3d world_translation = optimized_pose.R * extrinsic.p + optimized_pose.p;
+  PcdWriteJob job;
+  job.cloud = cloud;
+  job.rotation = extrinsic.R;
+  job.translation = extrinsic.p;
+  job.path = (std::filesystem::path(save_dir) / frame_pcd_filename(frame_id)).string();
 
-  for (PointType& point : cloud_world.points)
+  std::unique_lock<std::mutex> lock(pcd_mutex);
+  if (pcd_writer_stopping)
   {
-    const Eigen::Vector3d point_body(point.x, point.y, point.z);
-    const Eigen::Vector3d point_world = world_rotation * point_body + world_translation;
-    point.x = static_cast<float>(point_world.x());
-    point.y = static_cast<float>(point_world.y());
-    point.z = static_cast<float>(point_world.z());
+    return false;
+  }
+
+  if (!pcd_writer_thread.joinable())
+  {
+    pcd_writer_thread = std::thread(&FileReaderWriter::pcd_writer_loop, this);
+  }
+
+  pcd_queue_drained.wait(lock, [this] { return pcd_writer_stopping || pcd_queue.size() < kMaxPendingFrames; });
+  if (pcd_writer_stopping)
+  {
+    return false;
+  }
+
+  pcd_queue.push_back(std::move(job));
+  lock.unlock();
+  pcd_queue_filled.notify_one();
+  return true;
+}
+
+bool FileReaderWriter::flush_frame_pcd()
+{
+  std::unique_lock<std::mutex> lock(pcd_mutex);
+  pcd_queue_drained.wait(lock, [this] { return pcd_queue.empty() && !pcd_write_in_progress; });
+
+  if (pcd_write_failures != 0)
+  {
+    std::cerr << "[is_save_map]: " << pcd_write_failures << " frame PCD write(s) failed" << std::endl;
+    return false;
+  }
+  return true;
+}
+
+void FileReaderWriter::pcd_writer_loop()
+{
+  std::unique_lock<std::mutex> lock(pcd_mutex);
+
+  while (true)
+  {
+    pcd_queue_filled.wait(lock, [this] { return pcd_writer_stopping || !pcd_queue.empty(); });
+
+    // Drain the backlog even while stopping so a graceful shutdown keeps every frame.
+    if (pcd_queue.empty())
+    {
+      return;
+    }
+
+    const PcdWriteJob job = std::move(pcd_queue.front());
+    pcd_queue.pop_front();
+    pcd_write_in_progress = true;
+
+    lock.unlock();
+    pcd_queue_drained.notify_all();
+    const bool written = write_frame_pcd(job);
+    lock.lock();
+
+    pcd_write_in_progress = false;
+    if (!written)
+    {
+      pcd_write_failures++;
+    }
+    pcd_queue_drained.notify_all();
+  }
+}
+
+bool FileReaderWriter::write_frame_pcd(const PcdWriteJob& job) const
+{
+  // Points arrive in the raw LiDAR frame; only the LiDAR-IMU extrinsic is applied so that the file stays in the
+  // IMU/body frame of its own scan and stays valid no matter how later optimization moves the trajectory.
+  pcl::PointCloud<PointType> cloud_body = *job.cloud;
+
+  for (PointType& point : cloud_body.points)
+  {
+    const Eigen::Vector3d point_lidar(point.x, point.y, point.z);
+    const Eigen::Vector3d point_body = job.rotation * point_lidar + job.translation;
+    point.x = static_cast<float>(point_body.x());
+    point.y = static_cast<float>(point_body.y());
+    point.z = static_cast<float>(point_body.z());
 
     if (is_valid_normal(point))
     {
-      const Eigen::Vector3d normal_body(point.normal_x, point.normal_y, point.normal_z);
-      const Eigen::Vector3d normal_world = world_rotation * normal_body;
-      point.normal_x = static_cast<float>(normal_world.x());
-      point.normal_y = static_cast<float>(normal_world.y());
-      point.normal_z = static_cast<float>(normal_world.z());
+      const Eigen::Vector3d normal_lidar(point.normal_x, point.normal_y, point.normal_z);
+      const Eigen::Vector3d normal_body = job.rotation * normal_lidar;
+      point.normal_x = static_cast<float>(normal_body.x());
+      point.normal_y = static_cast<float>(normal_body.y());
+      point.normal_z = static_cast<float>(normal_body.z());
     }
   }
 
-  const std::filesystem::path pcd_path = std::filesystem::path(save_dir) / frame_pcd_filename(frame_id);
-  return pcl::io::savePCDFileBinary(pcd_path.string(), cloud_world) == 0;
+  if (pcl::io::savePCDFileBinary(job.path, cloud_body) != 0)
+  {
+    std::cerr << "[is_save_map]: Cannot write frame PCD: " << job.path << std::endl;
+    return false;
+  }
+  return true;
 }

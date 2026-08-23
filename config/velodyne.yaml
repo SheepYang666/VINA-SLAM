@@ -53,7 +53,8 @@ vina_slam:
           0.999776986,
         ]
 
-      # Save optimized per-frame PCDs under save_path/bagname/pcd: 0=disabled, 1=enabled
+      # Save per-frame PCDs (IMU/body frame, written on a background thread) under save_path/bagname/pcd.
+      # Apply the matching TUM trajectory row to place a frame in the world: 0=disabled, 1=enabled
       is_save_map: 0
       # Save optimized per-frame poses in TUM format (timestamp tx ty tz qx qy qz qw): 0=disabled, 1=enabled
       is_save_pose: 1

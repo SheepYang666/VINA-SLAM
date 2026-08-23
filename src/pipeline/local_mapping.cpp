@@ -309,8 +309,8 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
 
       if (is_save_map == 1)
       {
-        FileReaderWriter::instance().save_frame_pcd(*frame_cloud_buf[i], optimized_pose, extrin_para, frame_id,
-                                                    map_frame_save_dir);
+        // Queues the frame for the background writer; the mapping loop does not wait for the file to hit disk.
+        FileReaderWriter::instance().save_frame_pcd(frame_cloud_buf[i], extrin_para, frame_id, map_frame_save_dir);
       }
 
       if (is_save_pose == 1)
@@ -528,7 +528,8 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
       }
 
       // Persist the frame that is leaving the sliding window after the optional local BA update.
-      // This makes each saved PCD and TUM row use the final optimized pose available for that frame.
+      // The TUM row uses the final optimized pose available for that frame; the PCD stays in that frame's own
+      // IMU/body frame, so the pose row is what places it in the world.
       save_optimized_frames(mgsize);
 
       x_last = x_curr;
@@ -588,6 +589,9 @@ void VINA_SLAM::run_odometry_local_mapping_loop(std::shared_ptr<rclcpp::Node> no
   // the same local BA stage as the last published window state.
   save_optimized_frames(win_count);
   frame_cloud_buf.clear();
+
+  // Only place the pipeline waits on PCD I/O: every queued frame must reach disk before the process exits.
+  FileReaderWriter::instance().flush_frame_pcd();
 
   vector<OctoTree*> octos;
   for (auto iter = surf_map.begin(); iter != surf_map.end(); iter++)
